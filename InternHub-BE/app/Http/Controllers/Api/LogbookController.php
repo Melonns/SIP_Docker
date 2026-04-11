@@ -12,6 +12,67 @@ use App\Notifications\GeneralNotification;
 class LogbookController extends Controller
 {
     /**
+     * Build mentor intern detail path using mahasiswa ID expected by FE route.
+     */
+    private function buildMentorInternDetailPath(User $user): string
+    {
+        $internId = $user->mahasiswa?->id_mahasiswa;
+
+        if (!$internId) {
+            $internId = \App\Models\TblMahasiswa::where('user_id', $user->user_id)->value('id_mahasiswa');
+        }
+
+        return $internId ? "/mentor/interns/{$internId}" : '/mentor/internMonitoring';
+    }
+
+    /**
+     * Extract uploaded evidence files from multipart request in a robust way.
+     * Supports keys: bukti_kegiatan, bukti_kegiatan[], and nested arrays.
+     */
+    private function extractEvidenceFiles(Request $request): array
+    {
+        $files = [];
+
+        $pushUploadedFiles = function ($value) use (&$files, &$pushUploadedFiles) {
+            if ($value instanceof \Illuminate\Http\UploadedFile) {
+                $files[] = $value;
+                return;
+            }
+
+            if (is_array($value)) {
+                foreach ($value as $nested) {
+                    $pushUploadedFiles($nested);
+                }
+            }
+        };
+
+        // Read from normalized and bracket keys to handle different clients.
+        $allFiles = $request->allFiles();
+        $pushUploadedFiles($allFiles['bukti_kegiatan'] ?? null);
+        $pushUploadedFiles($allFiles['bukti_kegiatan[]'] ?? null);
+
+        // Additional fallbacks for non-standard multipart parsers.
+        $pushUploadedFiles($request->file('bukti_kegiatan'));
+        $pushUploadedFiles($request->file('bukti_kegiatan.*'));
+        $pushUploadedFiles($request->file('bukti_kegiatan[]'));
+
+        // Deduplicate only exact same object references.
+        // This prevents dropping distinct files that coincidentally share similar metadata.
+        $unique = [];
+        $seenObjectIds = [];
+        foreach ($files as $file) {
+            $objectId = spl_object_id($file);
+            if (isset($seenObjectIds[$objectId])) {
+                continue;
+            }
+            $seenObjectIds[$objectId] = true;
+            $unique[] = $file;
+        }
+
+        return $unique;
+    }
+
+    /**
      * List logbooks untuk intern yang login
      */
     public function index(Request $request)
@@ -136,12 +197,12 @@ class LogbookController extends Controller
     public function store(Request $request)
     {
         $input = $request->all();
+        $uploadedFiles = $this->extractEvidenceFiles($request);
 
         // Robust file extraction: ensure we handle array of files
         // Fix: Explicitly merge files into input and force array structure for validation
-        if ($request->hasFile('bukti_kegiatan')) {
-            $files = $request->file('bukti_kegiatan');
-            $input['bukti_kegiatan'] = is_array($files) ? $files : [$files];
+        if (!empty($uploadedFiles)) {
+            $input['bukti_kegiatan'] = $uploadedFiles;
         } else {
              unset($input['bukti_kegiatan']);
         }
@@ -174,7 +235,7 @@ class LogbookController extends Controller
             if (in_array($existing->status_verifikasi, ['rejected', 'revision_needed', 'draft'])) {
                 // Handle File Upload for resubmit
                 $buktiPaths = [];
-                if ($request->hasFile('bukti_kegiatan')) {
+                if (!empty($uploadedFiles)) {
                     // Delete old files
                     $oldFiles = $existing->bukti_kegiatan;
                     if ($oldFiles && is_array($oldFiles)) {
@@ -183,12 +244,7 @@ class LogbookController extends Controller
                             \Illuminate\Support\Facades\Storage::disk('public')->delete($path);
                         }
                     }
-
-                    $files = $request->file('bukti_kegiatan');
-                    if (!is_array($files)) {
-                        $files = [$files];
-                    }
-                    foreach ($files as $file) {
+                    foreach ($uploadedFiles as $file) {
                         $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
                         $path = $file->storeAs('logbooks', $filename, 'public');
                         $buktiPaths[] = 'storage/' . $path;
@@ -214,12 +270,13 @@ class LogbookController extends Controller
                 if (!$isDraft) {
                     // Notifikasi ke Mentor (Logbook Diperbaiki)
                     $mentors = $user->mentors()->get();
+                    $targetPath = $this->buildMentorInternDetailPath($user);
                     foreach ($mentors as $mentor) {
                         if ($mentor) {
                             $mentor->notify(new GeneralNotification(
                                 'Revisi Logbook Dikirim',
                                 "Intern {$user->nama} telah memperbaiki dan mengirim ulang logbook tanggal " . Carbon::parse($request->tanggal)->format('d-m-Y') . ".",
-                                "/mentor/logbook",
+                                $targetPath,
                                 "info",
                                 "mentor"
                             ));
@@ -244,15 +301,8 @@ class LogbookController extends Controller
 
         // Handle File Upload
         $buktiPaths = [];
-        if ($request->hasFile('bukti_kegiatan')) {
-            $files = $request->file('bukti_kegiatan');
-            
-            // Normalize to array
-            if (!is_array($files)) {
-                $files = [$files];
-            }
-
-            foreach ($files as $file) {
+        if (!empty($uploadedFiles)) {
+            foreach ($uploadedFiles as $file) {
                  $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
                  // Store in storage/app/public/logbooks
                  $path = $file->storeAs('logbooks', $filename, 'public');
@@ -276,12 +326,13 @@ class LogbookController extends Controller
         if (!$isDraft) {
             // Notifikasi ke Mentor (Logbook Baru)
             $mentors = $user->mentors()->get();
+            $targetPath = $this->buildMentorInternDetailPath($user);
             foreach ($mentors as $mentor) {
                 if ($mentor) {
                     $mentor->notify(new GeneralNotification(
                         'Logbook Baru',
                         "Intern {$user->nama} telah mensubmit logbook untuk tanggal " . Carbon::parse($request->tanggal)->format('d-m-Y') . ".",
-                        "/mentor/logbook",
+                        $targetPath,
                         "info",
                         "mentor"
                     ));
@@ -323,12 +374,12 @@ class LogbookController extends Controller
     public function update(Request $request, $id)
     {
         $input = $request->all();
+        $uploadedFiles = $this->extractEvidenceFiles($request);
 
         // Robust file extraction: ensure we handle array of files
         // Fix: Explicitly merge files into input and force array structure for validation
-        if ($request->hasFile('bukti_kegiatan')) {
-             $files = $request->file('bukti_kegiatan');
-             $input['bukti_kegiatan'] = is_array($files) ? $files : [$files];
+        if (!empty($uploadedFiles)) {
+             $input['bukti_kegiatan'] = $uploadedFiles;
         } else {
             unset($input['bukti_kegiatan']);
         }
@@ -388,7 +439,7 @@ class LogbookController extends Controller
         // Handle File Replacement
         // NOTE: Currently we replace ALL files if new files are uploaded.
         // To support "append" or "delete specific", we need more complex logic on FE.
-        if ($request->hasFile('bukti_kegiatan')) {
+        if (!empty($uploadedFiles)) {
             // Delete old files
             $oldFiles = $logbooks->bukti_kegiatan; // Accessor ensures this is array
             if ($oldFiles && is_array($oldFiles)) {
@@ -403,15 +454,9 @@ class LogbookController extends Controller
                          \Illuminate\Support\Facades\Storage::delete(str_replace('storage/', 'public/', $oldFiles));
                     }
             }
-
             // Upload new files
-            $files = $request->file('bukti_kegiatan');
-            if (!is_array($files)) {
-                $files = [$files];
-            }
-            
             $newPaths = [];
-            foreach ($files as $file) {
+            foreach ($uploadedFiles as $file) {
                  $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
                  $path = $file->storeAs('logbooks', $filename, 'public');
                  $newPaths[] = 'storage/' . $path;
@@ -426,12 +471,13 @@ class LogbookController extends Controller
         if (!$isDraft && $newStatus === 'pending') {
             // Notifikasi ke Mentor (Logbook Diajukan/Diubah)
             $mentors = $user->mentors()->get();
+            $targetPath = $this->buildMentorInternDetailPath($user);
             foreach ($mentors as $mentor) {
                 if ($mentor) {
                     $mentor->notify(new GeneralNotification(
                         'Logbook Diajukan',
                         "Intern {$user->nama} telah mengajukan logbook tanggal " . Carbon::parse($logbooks->tanggal)->format('d-m-Y') . " untuk diverifikasi.",
-                        "/mentor/logbook",
+                        $targetPath,
                         "info",
                         "mentor"
                     ));

@@ -1871,6 +1871,8 @@ class UserController extends Controller
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'status_verifikasi' => 'nullable|string',
+            'q' => 'nullable|string',
+            'search' => 'nullable|string',
         ]);
 
         // // Authorization: Admin or Mentor only
@@ -1984,7 +1986,7 @@ class UserController extends Controller
         if ($mahasiswaId) { $logbookQuery->where('id_mahasiswa', $mahasiswaId); } else { $logbookQuery->where('user_id', $intern->user_id); }
         $logbooksByDate = $logbookQuery
             ->whereBetween('tanggal', [$periodStart->toDateString(), $periodEnd->toDateString()])
-            ->select('tanggal', 'status_verifikasi')
+            ->select('tanggal', 'status_verifikasi', 'deskripsi_kegiatan')
             ->get()
             ->groupBy('tanggal')
             ->mapWithKeys(function ($logs, $date) {
@@ -1994,6 +1996,8 @@ class UserController extends Controller
                 return [$dateStr => $logs];
             })
             ->all();
+
+        $searchQuery = strtolower(trim((string) ($request->q ?? $request->search ?? '')));
 
         // Prefetch approved leave_requests spanning the period and approved koreksi per date so daily-summary reflects them
         $leaveQuery = \App\Models\Izin::query();
@@ -2060,8 +2064,6 @@ class UserController extends Controller
         foreach ($allWorkingDays as $tanggal) {
             $hasAttendance = isset($attendanceByDate[$tanggal]);
             $logbooks = $logbooksByDate[$tanggal] ?? null;
-            
-            $includeDay = false;
 
             // If status filter includes not_yet and optionally other statuses, handle both
             $includeNotYet = $statusFilterParsed['include_not_yet'] ?? false;
@@ -2089,14 +2091,21 @@ class UserController extends Controller
                 }
             }
 
-            if ($request->filled('status_verifikasi')) {
-                if ($matched) $summaryData[] = $tanggal;
-            } else {
-                // No status filter: include all working days (attendance/logbooks/empty)
-                $summaryData[] = $tanggal;
+            $hasMatchedDescription = true;
+            if ($searchQuery !== '') {
+                $hasMatchedDescription = false;
+                if ($logbooks) {
+                    $hasMatchedDescription = $logbooks->contains(function ($log) use ($searchQuery) {
+                        $desc = strtolower((string) ($log->deskripsi_kegiatan ?? ''));
+                        return $desc !== '' && str_contains($desc, $searchQuery);
+                    });
+                }
             }
-            
-            if ($includeDay) {
+
+            $shouldInclude = $request->filled('status_verifikasi') ? $matched : true;
+            $shouldInclude = $shouldInclude && $hasMatchedDescription;
+
+            if ($shouldInclude) {
                 $summaryData[] = $tanggal;
             }
         }
@@ -2133,7 +2142,7 @@ class UserController extends Controller
                 ->first();
 
             // Get logbooks for this date (first logbooks if multiple)
-            $logbookQuery = \App\Models\Logbook::query();
+            $logbookQuery = \App\Models\Logbook::with(['tag:id,nama']);
             if ($mahasiswaId) { $logbookQuery->where('id_mahasiswa', $mahasiswaId); } else { $logbookQuery->where('user_id', $intern->user_id); }
             $logbooks = $logbookQuery->where('tanggal', $tanggalStr)->first();
 
@@ -2218,6 +2227,11 @@ class UserController extends Controller
                 ] : null,
                 'logbooks' => $logbooks ? [
                     'logbooks_id' => $logbooks->id_logbooks,
+                    'tag_id' => $logbooks->tag_id,
+                    'tag' => $logbooks->tag ? [
+                        'id' => $logbooks->tag->id,
+                        'nama' => $logbooks->tag->nama,
+                    ] : null,
                     'deskripsi_kegiatan' => $logbooks->deskripsi_kegiatan,
                     'bukti_kegiatan' => $logbooks->bukti_kegiatan ? (is_array($logbooks->bukti_kegiatan) ? array_map(fn($f) => url("/api/logbook/" . $logbooks->id_logbooks . "/file/" . basename($f)), $logbooks->bukti_kegiatan) : url("/api/logbook/" . $logbooks->id_logbooks . "/file/" . basename($logbooks->bukti_kegiatan))) : null,
                     'status_verifikasi' => $logbooks->status_verifikasi,

@@ -45,6 +45,7 @@ const DailyActivitiesPage = () => {
   const [logbooks, setLogbooks] = useState([]);
   const [attendancePeriod, setAttendancePeriod] = useState(null);
   const [dailySummaryMissingDays, setDailySummaryMissingDays] = useState([]);
+  const [taskCategories, setTaskCategories] = useState([]);
   const [loadingList, setLoadingList] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ open: false, percent: 0, indeterminate: true });
   const formRef = useRef(null);
@@ -119,6 +120,23 @@ const DailyActivitiesPage = () => {
     return params;
   };
 
+  const fetchTaskCategories = async () => {
+    try {
+      const res = await apiClient.get('/tags', { params: { per_page: 1000 } });
+      const payload = res?.data?.data;
+      const rows = Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload) ? payload : []);
+      const mapped = rows.map((row) => ({
+        id: row?.id,
+        name: row?.nama,
+        color: row?.warna,
+      })).filter((row) => row.id && row.name);
+      setTaskCategories(mapped);
+    } catch (err) {
+      console.warn('Failed to fetch task categories:', err);
+      setTaskCategories([]);
+    }
+  };
+
   const getStoredMahasiswaId = () => {
     try {
       const rawUser = localStorage.getItem('user');
@@ -178,6 +196,8 @@ const DailyActivitiesPage = () => {
         const normalized = {
           id: d.id_logbook ?? d.id,
           date: d.tanggal,
+          taskCategoryId: d.tag_id || d.tagId || d.tag?.id || '',
+          taskCategory: d.tag?.nama || d.task_category || d.kategori_task || d.taskCategory || d.category_task || d.category || '',
           summary: d.deskripsi_kegiatan || d.deskripsi || d.activity_description || d.activity || '',
           output: Array.isArray(d.bukti_kegiatan) ? d.bukti_kegiatan.join(',') : (d.bukti_kegiatan || ''),
           outputs,
@@ -273,6 +293,9 @@ const DailyActivitiesPage = () => {
     const form = new FormData();
     form.append('tanggal', payload?.date);
     form.append('deskripsi_kegiatan', payload?.summary || '');
+    if (Object.prototype.hasOwnProperty.call(payload || {}, 'taskCategoryId')) {
+      form.append('tag_id', payload?.taskCategoryId ? String(payload.taskCategoryId) : '');
+    }
     // Duration input removed from UI; keep sending zeros for API compatibility.
     form.append('durasi_jam', '0');
     form.append('durasi_menit', '0');
@@ -453,6 +476,56 @@ const DailyActivitiesPage = () => {
     }
   };
 
+  const parseOutputValues = (rawValue) => {
+    if (!rawValue) return [];
+
+    const toValue = (entry) => {
+      if (!entry) return null;
+      if (typeof entry === 'string') return entry.trim();
+      if (typeof entry === 'object') {
+        return (
+          entry.url ||
+          entry.path ||
+          entry.file_url ||
+          entry.fileUrl ||
+          entry.file ||
+          entry.location ||
+          null
+        );
+      }
+      return null;
+    };
+
+    if (Array.isArray(rawValue)) {
+      return rawValue
+        .map(toValue)
+        .filter(Boolean)
+        .map((v) => String(v).trim())
+        .filter(Boolean);
+    }
+
+    const rawText = String(rawValue).trim();
+    if (!rawText) return [];
+
+    if ((rawText.startsWith('[') && rawText.endsWith(']')) || (rawText.startsWith('{') && rawText.endsWith('}'))) {
+      try {
+        const parsed = JSON.parse(rawText);
+        return parseOutputValues(parsed);
+      } catch (e) {
+        // fall through to CSV/single value parsing
+      }
+    }
+
+    if (rawText.includes(',')) {
+      return rawText
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
+    }
+
+    return [rawText];
+  };
+
   const normalizeStatus = (rawStatus) => {
     const s = String(rawStatus || '').toLowerCase();
     if (s === 'approved' || s === 'verified') return 'Approved';
@@ -485,12 +558,34 @@ const DailyActivitiesPage = () => {
 
   const normalizeOutputsFromItem = (item) => {
     if (!item) return [];
-    if (Array.isArray(item.bukti_kegiatan)) return item.bukti_kegiatan;
-    if (item.bukti_kegiatan && typeof item.bukti_kegiatan === 'string') return [item.bukti_kegiatan];
-    if (item.output && typeof item.output === 'string') {
-      return item.output.split(',').map(s => s.trim()).filter(Boolean);
-    }
-    return [];
+
+    const candidates = [
+      item.bukti_kegiatan,
+      item.outputs,
+      item.output,
+      item.files,
+      item.attachments,
+      item.logbooks?.bukti_kegiatan,
+      item.logbook?.bukti_kegiatan,
+    ];
+
+    const merged = candidates.flatMap((candidate) => parseOutputValues(candidate));
+    return [...new Set(merged.filter(Boolean))];
+  };
+
+  const getTaskCategoryFromItem = (item) => {
+    if (!item) return '';
+    const directName = item.tag?.nama || item.task_category || item.kategori_task || item.taskCategory || item.category_task || item.category || '';
+    if (directName) return directName;
+    const categoryId = item.tag_id || item.tagId || item.tag?.id;
+    if (!categoryId) return '';
+    const fromMaster = taskCategories.find((cat) => String(cat.id) === String(categoryId));
+    return fromMaster?.name || '';
+  };
+
+  const getTaskCategoryIdFromItem = (item) => {
+    if (!item) return '';
+    return item.tag_id || item.tagId || item.tag?.id || '';
   };
 
   const mapLogbookItem = (item) => {
@@ -505,6 +600,8 @@ const DailyActivitiesPage = () => {
     return {
       id: item.id_logbooks ?? item.id_logbook ?? item.logbook_id ?? item.id,
       date: item.tanggal,
+      taskCategoryId: getTaskCategoryIdFromItem(item),
+      taskCategory: getTaskCategoryFromItem(item),
       summary: item.deskripsi_kegiatan || item.deskripsi || item.activity_description || item.activity || '',
       output: Array.isArray(item.bukti_kegiatan) ? item.bukti_kegiatan.join(',') : (item.bukti_kegiatan || item.output || ''),
       outputs,
@@ -555,6 +652,7 @@ const DailyActivitiesPage = () => {
         per_page: params.per_page ?? itemsPerPage,
         start_date: params.start_date ?? formatDateForApi(appliedFilter.startDate) ?? undefined,
         end_date: params.end_date ?? formatDateForApi(appliedFilter.endDate) ?? undefined,
+        q: params.q ?? (searchTerm.trim() || undefined),
         id_mahasiswa: mahasiswaId, // Add explicit id_mahasiswa param
         ...filteredParams
       };
@@ -632,6 +730,8 @@ const DailyActivitiesPage = () => {
         return {
           id: logbook?.logbooks_id ?? logbook?.logbook_id ?? logbook?.id_logbooks ?? logbook?.id_logbook ?? logbook?.id ?? row?.logbooks?.logbooks_id ?? row?.id_logbooks ?? row?.id_logbook ?? row?.id ?? `daily-${date}-${idx}`,
           date,
+          taskCategoryId: getTaskCategoryIdFromItem(logbook || row),
+          taskCategory: getTaskCategoryFromItem(logbook || row),
           jam_masuk: attendance?.jam_masuk || '-',
           jam_pulang: attendance?.jam_pulang || '-',
           durasi_kerja: attendance?.durasi_kerja || attendance?.work_duration?.formatted || '-',
@@ -683,7 +783,8 @@ const DailyActivitiesPage = () => {
   useEffect(() => {
     if (!isInitialMountRef.current) return;
     isInitialMountRef.current = false;
-    
+
+    fetchTaskCategories();
     fetchLogbooks({ page: 1, per_page: itemsPerPage, user_id: getStoredMahasiswaId(), ...buildFilterParams(appliedFilter) });
   }, []);
 
@@ -718,6 +819,9 @@ const DailyActivitiesPage = () => {
       if (d) {
         const mapped = mapLogbookItem(d);
         if (item?.date) mapped.date = item.date;
+        if ((!mapped.outputs || mapped.outputs.length === 0) && Array.isArray(initial.outputs) && initial.outputs.length > 0) {
+          mapped.outputs = initial.outputs;
+        }
         setSelectedDetail(mapped);
       }
     } catch (err) {
@@ -1069,7 +1173,7 @@ const DailyActivitiesPage = () => {
                   setIsFilterOpen(false);
                   setAppliedFilter(filter);
                   const params = buildFilterParams(filter);
-                  fetchLogbooks({ page: 1, per_page: itemsPerPage, user_id: getStoredUserId(), ...params });
+                  fetchLogbooks({ page: 1, per_page: itemsPerPage, user_id: getStoredMahasiswaId(), ...params });
                 }} className={btnPrimaryClass}>Apply</button>
               </div>
             </motion.div>
@@ -1114,6 +1218,10 @@ const DailyActivitiesPage = () => {
                     </div>
                   </div>
                   <div className="grid grid-cols-1 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div>
+                      <p className="text-xs text-slate-400 font-bold uppercase mb-1">Category Task</p>
+                      <p className="text-sm text-slate-600 leading-relaxed bg-white p-3 rounded-lg border border-slate-100">{selectedDetail.taskCategory || '-'}</p>
+                    </div>
                     <div>
                       <p className="text-xs text-slate-400 font-bold uppercase mb-1">Activity Description</p>
                       <p className="text-sm text-slate-600 leading-relaxed bg-white p-3 rounded-lg border border-slate-100">{selectedDetail.summary}</p>
@@ -1229,7 +1337,7 @@ const DailyActivitiesPage = () => {
 
       {/* 4. FORM MODAL (ADD / EDIT) */}
       <AnimatePresence>
-        {isFormOpen && <LogbookFormModal ref={formRef} mode={formMode} initialData={selectedLogbook} onClose={() => setIsFormOpen(false)} onAction={handleFormAction} />}
+        {isFormOpen && <LogbookFormModal ref={formRef} mode={formMode} initialData={selectedLogbook} taskCategories={taskCategories} onClose={() => setIsFormOpen(false)} onAction={handleFormAction} />}
       </AnimatePresence>
 
       {/* STATUS MODAL */}
@@ -1255,9 +1363,10 @@ const DailyActivitiesPage = () => {
 };
 
 // --- SUB-COMPONENT: LOGBOOK FORM (Complex Logic) ---
-const LogbookFormModal = React.forwardRef(({ mode, initialData, onClose, onAction }, ref) => {
+const LogbookFormModal = React.forwardRef(({ mode, initialData, taskCategories = [], onClose, onAction }, ref) => {
   const [formData, setFormData] = useState({
     date: initialData?.date || "",
+    taskCategoryId: initialData?.taskCategoryId ? String(initialData.taskCategoryId) : "",
     description: initialData?.summary || "",
   });
 
@@ -1390,9 +1499,35 @@ const LogbookFormModal = React.forwardRef(({ mode, initialData, onClose, onActio
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
-  const isFormValid = () => {
+  const isDraftFormValid = () => {
+    const hasAnyInput = Boolean(
+      formData.date ||
+      formData.taskCategoryId ||
+      formData.description.trim() ||
+      files.length > 0
+    );
+
+    if (!hasAnyInput) {
+      setFileErrorModal({ open: true, message: "To save as draft, please fill at least one field." });
+      return false;
+    }
+
+    // If date is filled, keep basic date validity constraints even for draft.
+    if (formData.date && !isValidLogbookDate(formData.date)) {
+      setFileErrorModal({ open: true, message: dateError || "Please select a valid date (weekdays only, not in the future)." });
+      return false;
+    }
+
+    return true;
+  };
+
+  const isSubmitFormValid = () => {
     if (!formData.date) {
       setFileErrorModal({ open: true, message: "Please select a date." });
+      return false;
+    }
+    if (!formData.taskCategoryId) {
+      setFileErrorModal({ open: true, message: "Please select a task category." });
       return false;
     }
     if (!isValidLogbookDate(formData.date)) {
@@ -1416,7 +1551,8 @@ const LogbookFormModal = React.forwardRef(({ mode, initialData, onClose, onActio
   };
 
   const handleAction = async (actionType) => {
-    if (actionType !== "delete" && !isFormValid()) return;
+    if (actionType === "draft" && !isDraftFormValid()) return;
+    if (actionType === "submit" && !isSubmitFormValid()) return;
 
     const dateToCheck = formData.date || initialData?.date;
     if (dateToCheck && actionType !== 'delete') {
@@ -1431,6 +1567,7 @@ const LogbookFormModal = React.forwardRef(({ mode, initialData, onClose, onActio
     const payload = {
       id: initialData?.id,
       date: formData.date || initialData?.date,
+      taskCategoryId: formData.taskCategoryId,
       summary: formData.description || "",
       durasi_jam: 0,
       durasi_menit: 0,
@@ -1600,6 +1737,21 @@ const LogbookFormModal = React.forwardRef(({ mode, initialData, onClose, onActio
               {dateBlockedReason && <p className="text-xs text-red-500 mt-2">You cannot submit a logbook for this date because attendance status is "{dateBlockedReason}".</p>}
             </div>
 
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Category Task <span className="text-red-500">*</span></label>
+              <select
+                value={formData.taskCategoryId}
+                onChange={(e) => setFormData({ ...formData, taskCategoryId: e.target.value })}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#354C8F]/20"
+              >
+                <option value="">Select task category</option>
+                {taskCategories.map((category) => (
+                  <option key={category.id} value={String(category.id)}>{category.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500 mt-2">Select from Master Data task categories.</p>
+            </div>
+
             {/* Description */}
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-2">Activity Description <span className="text-red-500">*</span></label>
@@ -1685,7 +1837,7 @@ const LogbookFormModal = React.forwardRef(({ mode, initialData, onClose, onActio
           <button
             type="button"
             onClick={() => handleAction("submit")}
-            disabled={checkingDate || Boolean(dateBlockedReason) || !formData.date || !formData.description.trim() || files.some(f => f.status === "uploading") || !files.some(f => (f.type && String(f.type).startsWith('image/')) || /\.(jpe?g|png)$/i.test(String(f.name)))}
+            disabled={checkingDate || Boolean(dateBlockedReason) || !formData.date || !formData.taskCategoryId || !formData.description.trim() || files.some(f => f.status === "uploading") || !files.some(f => (f.type && String(f.type).startsWith('image/')) || /\.(jpe?g|png)$/i.test(String(f.name)))}
             title={dateBlockedReason ? `Cannot submit: attendance = ${dateBlockedReason}` : ''}
             className={`${btnPrimaryClass} ${checkingDate || dateBlockedReason ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
