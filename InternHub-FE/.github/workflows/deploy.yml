@@ -1,0 +1,70 @@
+name: Deploy Frontend (Build on GitHub)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # 1. Setup Node.js di GitHub runner
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # 2. Install dependencies di GitHub runner
+      - name: Install Dependencies
+        run: npm install
+
+      # 3. Build di GitHub runner (buat .env dulu kalau perlu)
+      - name: Create .env
+        run: |
+          echo 'VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}' > .env
+          echo 'VITE_PUSHER_APP_KEY="${{ secrets.VITE_PUSHER_APP_KEY }}"' >> .env
+          echo 'VITE_PUSHER_APP_CLUSTER="${{ secrets.VITE_PUSHER_APP_CLUSTER }}"' >> .env
+
+      - name: Build
+        run: npm run build
+
+      # 4. Bersihkan folder dist lama di server via SSH biar SCP nggak error
+      - name: Clean Old Dist on Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.PORT }}
+          script: |
+            rm -rf /home/devsip/SIP-SIER/InternHub-FE/dist/* 2>/dev/null || true
+            mkdir -p /home/devsip/SIP-SIER/InternHub-FE/dist
+
+      # 5. Kirim HANYA folder dist ke server (TIDAK PAKAI rm: true)
+      - name: Deploy to Server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.PORT }}
+          source: "dist/*"
+          target: "/home/devsip/SIP-SIER/InternHub-FE/dist"
+          strip_components: 1
+
+      # 6. Post Deploy
+      - name: Post Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.PORT }}
+          script: |
+            echo "DEPLOY BERHASIL! 🚀"

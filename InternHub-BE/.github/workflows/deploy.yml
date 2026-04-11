@@ -1,0 +1,32 @@
+name: Deploy SIP-BE Development
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.PORT }}
+          debug: true
+          script: |
+            cd /home/devsip/SIP-SIER/InternHub-BE
+            
+            git fetch origin main
+            git checkout main
+            git pull origin main
+            
+            composer install --no-dev --optimize-autoloader --no-interaction
+            
+            php artisan migrate --force
+            
+            php artisan optimize:clear

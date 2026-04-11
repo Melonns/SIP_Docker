@@ -1,0 +1,112 @@
+/* File: src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Poppins', sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Hide native calendar picker for inputs we control and remove spin/clear buttons on webkit */
+.no-native-calendar::-webkit-calendar-picker-indicator {
+  display: none;
+}
+.no-native-calendar::-webkit-inner-spin-button,
+.no-native-calendar::-webkit-outer-spin-button,
+.no-native-calendar::-ms-clear {
+  display: none;
+}
+
+/* Ensure cross-browser appearance none helper (Tailwind provides this, but keep as fallback) */
+.appearance-none {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+/* Keep Leaflet maps behind modals/sidebars */
+.leaflet-container,
+.leaflet-pane,
+.leaflet-control-container,
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 0 !important;
+}
+
+/* Magang section typography adjustments (scope to pages under MagangLayout main) */
+.magang-font { font-size: 12px; }
+/* Make existing Tailwind utility sizes conform to new rules inside magang pages */
+.magang-font .text-xs { font-size: 12px !important; }
+/* Subtitles and body text should be 14px */
+.magang-font .text-sm { font-size: 14px !important; }
+/* Titles / subtitles: prefer 14-16px (map multiple text-* classes to 16px) */
+.magang-font .text-base,
+.magang-font .text-lg,
+.magang-font .text-xl,
+.magang-font .text-2xl { font-size: 16px !important; }
+
+/* Keep main page title large (36px) - target h1 specifically to avoid global drift */
+.magang-font h1 { font-size: 36px !important; line-height: 1.05; }
+
+/* Small helper: ensure inputs / buttons inherit reasonable size where necessary */
+.magang-font input,
+.magang-font textarea { font-size: 12px !important; }
+.magang-font button,
+.magang-font button.text-sm,
+.magang-font button .text-sm { font-size: 14px !important; }
+
+/* Magang reduced font mapping: make most text one step smaller (except attendance & dashboard where class is not applied) */
+.magang-reduced .text-3xl { font-size: 1.5rem !important; } /* 30px -> 24px */
+.magang-reduced .text-2xl { font-size: 1.25rem !important; } /* 24px -> 20px */
+.magang-reduced .text-xl { font-size: 1.125rem !important; } /* 20px -> 18px */
+.magang-reduced .text-lg { font-size: 1rem !important; } /* 18px -> 16px */
+.magang-reduced .text-base { font-size: 0.875rem !important; } /* 16px -> 14px */
+.magang-reduced .text-sm { font-size: 0.75rem !important; } /* 14px -> 12px */
+.magang-reduced .text-xs { font-size: 0.625rem !important; } /* 12px -> 10px */
+
+/* Menu subtitles / section titles in sidebar: make larger (24px) */
+.magang-font nav .text-lg, .magang-font nav .font-bold { font-size: 24px !important; }
+
+/* Keep these overrides scoped to magang routes only to avoid global drift */
+
+/* Mentor section typography adjustments (scope to pages under MentorLayout main) */
+.mentor-font { font-size: 12px; }
+.mentor-font .text-xs,
+.mentor-font .text-sm,
+.mentor-font .text-base { font-size: 12px !important; }
+.mentor-font .text-lg,
+.mentor-font .text-xl,
+.mentor-font .text-2xl,
+.mentor-font .text-3xl { font-size: 24px !important; }
+.mentor-font h1 { font-size: 24px !important; line-height: 1.2; }
+.mentor-font input,
+.mentor-font textarea { font-size: 12px !important; }
+.mentor-font button,
+.mentor-font button.text-sm,
+.mentor-font button .text-sm { font-size: 14px !important; }
+.mentor-font .text-\[13px\] { font-size: 13px !important; }
+
+/* Admin section typography adjustments (scope to pages under AdminLayout main) */
+.admin-font { font-size: 12px; }
+.admin-font .text-xs,
+.admin-font .text-sm,
+.admin-font .text-base { font-size: 12px !important; }
+.admin-font .text-lg,
+.admin-font .text-xl,
+.admin-font .text-2xl,
+.admin-font .text-3xl { font-size: 24px !important; }
+.admin-font h1 { font-size: 24px !important; line-height: 1.2; }
+.admin-font input,
+.admin-font textarea { font-size: 12px !important; }
+.admin-font button,
+.admin-font button.text-sm,
+.admin-font button .text-sm { font-size: 14px !important; }
+.admin-font .text-\[13px\] { font-size: 13px !important; }

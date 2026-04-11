@@ -1,0 +1,38 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('students', function (Blueprint $table) {
+            if (!Schema::hasColumn('students', 'job_position')) {
+                $table->string('job_position')->nullable()->after('work_schedule_id');
+            }
+            if (!Schema::hasColumn('students', 'division')) {
+                $table->string('division')->nullable()->after('job_position');
+            }
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('students', function (Blueprint $table) {
+            if (Schema::hasColumn('students', 'job_position')) {
+                $table->dropColumn('job_position');
+            }
+            if (Schema::hasColumn('students', 'division')) {
+                $table->dropColumn('division');
+            }
+        });
+    }
+};

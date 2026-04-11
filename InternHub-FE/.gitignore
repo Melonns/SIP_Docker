@@ -1,0 +1,39 @@
+# --- IDE & OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# --- Environment Variables ---
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# --- Dependencies ---
+node_modules/
+
+# --- Build Output ---
+dist/
+build/
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+e2e_err.log
+
+# --- Playwright ---
+test-results/
+playwright-report/
+playwright/.cache/
+
+# --- Temporary / Generated Files ---
+tmp.js
+*.tmp
+e2e_err.log
