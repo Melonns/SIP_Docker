@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # -----------------------------------------------------
+  # 1. DATABASE (MySQL 8)
+  # -----------------------------------------------------
+  db:
+    image: mysql:8.0
+    container_name: sip_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: sip_docker
+      MYSQL_ROOT_PASSWORD: sip_root_password
+      MYSQL_USER: sip_user
+      MYSQL_PASSWORD: sip_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - sip_mysql_data:/var/lib/mysql
+    networks:
+      - sip_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -----------------------------------------------------
+  # 2. BACKEND (Laravel 10 - PHP 8.2)
+  # -----------------------------------------------------
+  backend:
+    build:
+      context: ./InternHub-BE
+      dockerfile: Dockerfile
+    container_name: sip_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./InternHub-BE:/var/www/html
+    environment:
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=sip_docker
+      - DB_USERNAME=root
+      - DB_PASSWORD=sip_root_password
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - sip_network
+
+  # -----------------------------------------------------
+  # 3. FRONTEND (React / Vite - Node 20)
+  # -----------------------------------------------------
+  frontend:
+    build:
+      context: ./InternHub-FE
+      dockerfile: Dockerfile
+    container_name: sip_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:5173"
+    volumes:
+      - ./InternHub-FE:/app
+      - /app/node_modules
+    networks:
+      - sip_network
+
+volumes:
+  sip_mysql_data:
+
+networks:
+  sip_network:
+    driver: bridge
