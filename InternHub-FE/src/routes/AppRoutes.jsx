@@ -46,6 +46,7 @@ import InternMapping from '../pages/Admin/Masterdata/InternMapping';
 import OfficeLocation from '../pages/Admin/Masterdata/Officelocation';
 import WorkingSchedule from '../pages/Admin/Masterdata/WorkingSchedule';
 import Evaluation from '../pages/Admin/Masterdata/Evaluation';
+import Tags from '../pages/Admin/Masterdata/Tags';
 import AdminReports from '../pages/Admin/Reports';
 import AdminLogbook from '../pages/Admin/Logbook';
 import AdminEvaluation from '../pages/Admin/Evaluation';
@@ -142,6 +143,7 @@ const AppRoutes = () => {
       <Route path="/admin/masterdata/officelocation" element={<OfficeLocation />} />
       <Route path="/admin/masterdata/workingSchedule" element={<WorkingSchedule />} />
       <Route path="/admin/masterdata/evaluation" element={<Evaluation />} />
+      <Route path="/admin/masterdata/tags" element={<Tags />} />
       <Route path="/admin/reports" element={<AdminReports />} />
       <Route path="/admin/logbook" element={<AdminLogbook />} />
       <Route path="/admin/evaluation" element={<AdminEvaluation />} />

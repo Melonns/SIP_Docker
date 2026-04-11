@@ -54,6 +54,7 @@ class RolePermissionSeeder extends Seeder
             'view_office_locations',
             'view_working_schedule',
             'view_evaluation_component',
+            'view_logbook_tags',
             'view_profile',
         ];
         $adminPermIds = Permission::whereIn('name', $adminPermNames)->pluck('permission_id')->toArray();

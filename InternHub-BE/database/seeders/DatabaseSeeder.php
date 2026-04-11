@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             \Database\Seeders\RolePermissionSeeder::class,
             \Database\Seeders\WorkScheduleSeeder::class,
             KomponenSeeder::class,
+            TagSeeder::class,
             CertificateTemplateSeeder::class,
         ]);
 

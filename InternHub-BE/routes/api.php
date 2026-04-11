@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\WorkScheduleController;
 use App\Http\Controllers\Api\EvaluationController;
 use App\Http\Controllers\Api\UserImportController;
 use App\Http\Controllers\Api\SertifikatController;
+use App\Http\Controllers\Api\TagController;
 
 /*
 |--------------------------------------------------------------------------
@@ -88,6 +89,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Division Routes
     Route::get('/available-divisions', [DivisionController::class, 'index'])->middleware('permission:view_user_role');
     Route::post('/sync-divisions-from-students', [DivisionController::class, 'syncFromStudents'])->middleware('permission:view_user_role');
+
+    // Tags (semua auth user bisa list, untuk dipilih saat buat/edit logbook)
+    Route::get('/tags', [TagController::class, 'index']);
+
     Route::get('/active-interns', [UserController::class, 'getActiveIntern'])->middleware('permission:view_intern_monitoring');
     Route::get('/done-interns', [UserController::class, 'getDoneIntern'])->middleware('permission:view_intern_monitoring');
 
@@ -465,6 +470,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('permission:view_logbook')->group(function () {
             Route::get('/logbook', [LogbookController::class, 'listAll']);
             Route::get('/logbook/user/{user_id}', [LogbookController::class, 'listByIntern'])->whereNumber('user_id');
+        });
+
+        // --- Tag Master Data (Admin) ---
+        Route::prefix('tags')->middleware('permission:view_logbook_tags')->group(function () {
+            Route::get('/', [TagController::class, 'index']);
+            Route::post('/', [TagController::class, 'store']);
+            Route::put('/{id}', [TagController::class, 'update'])->whereNumber('id');
+            Route::delete('/{id}', [TagController::class, 'destroy'])->whereNumber('id');
         });
 
         Route::middleware('permission:view_intern_profiles')->group(function () {

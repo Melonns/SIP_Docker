@@ -19,6 +19,7 @@ class Logbook extends Model
         'tanggal',
         'deskripsi_kegiatan',
         'bukti_kegiatan',
+        'tag_id',
         'status_verifikasi',
         'verified_by',
         'feedback',
@@ -65,6 +66,14 @@ class Logbook extends Model
             });
         }
         return $query->where('user_id', $user->user_id);
+    }
+
+    /**
+     * Relasi ke Tag
+     */
+    public function tag()
+    {
+        return $this->belongsTo(Tag::class, 'tag_id');
     }
 
     /**

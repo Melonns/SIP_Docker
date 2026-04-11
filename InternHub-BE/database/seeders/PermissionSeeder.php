@@ -51,6 +51,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'view_office_locations', 'label' => 'View Office Locations', 'group' => 'master_data', 'applicable_roles' => ['admin', 'mentor']],
             ['name' => 'view_working_schedule', 'label' => 'View Working Schedule', 'group' => 'master_data', 'applicable_roles' => ['admin', 'mentor']],
             ['name' => 'view_evaluation_component', 'label' => 'View Evaluation Component', 'group' => 'master_data', 'applicable_roles' => ['admin']],
+            ['name' => 'view_logbook_tags', 'label' => 'View Logbook Tags', 'group' => 'master_data', 'applicable_roles' => ['admin']],
 
             // Profile (semua role)
             ['name' => 'view_profile', 'label' => 'View Profile', 'group' => 'profile', 'applicable_roles' => null],

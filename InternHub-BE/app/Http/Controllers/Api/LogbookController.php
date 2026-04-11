@@ -155,6 +155,7 @@ class LogbookController extends Controller
             'bukti_kegiatan' => 'nullable', // Base field check
             'bukti_kegiatan.*' => 'file|mimes:jpg,jpeg,png,pdf|max:51200', // Max 10MB per file, specific check for array items
             'is_draft' => 'nullable|boolean',
+            'tag_id' => 'nullable|integer|exists:tags,id',
         ]);
 
         if ($validator->fails()) {
@@ -199,6 +200,7 @@ class LogbookController extends Controller
                     'status_verifikasi' => $isDraft ? 'draft' : 'pending',
                     'feedback' => null, // Clear old feedback
                     'submitted_at' => $isDraft ? null : Carbon::now(),
+                    'tag_id' => $request->filled('tag_id') ? $request->tag_id : $existing->tag_id,
                 ];
 
                 if (!empty($buktiPaths)) {
@@ -264,6 +266,7 @@ class LogbookController extends Controller
             'tanggal' => $request->tanggal,
             'deskripsi_kegiatan' => $request->deskripsi_kegiatan ?? '',
             'bukti_kegiatan' => $buktiPaths, // Model mutator handles JSON encoding
+            'tag_id' => $request->filled('tag_id') ? $request->tag_id : null,
             'status_verifikasi' => $isDraft ? 'draft' : 'pending',
             'submitted_at' => $isDraft ? null : Carbon::now(), // Set submission time jika submit (bukan draft)
         ]);
@@ -289,7 +292,7 @@ class LogbookController extends Controller
         return response()->json([
             'success' => true,
             'message' => $message,
-            'data' => $logbooks
+            'data' => $logbooks->load('tag')
         ], 201);
     }
 
@@ -298,7 +301,7 @@ class LogbookController extends Controller
      */
     public function show($id)
     {
-        $logbooks = Logbook::with(['user', 'verifier'])->find($id);
+        $logbooks = Logbook::with(['user', 'verifier', 'tag'])->find($id);
 
         if (!$logbooks) {
             return response()->json([
@@ -337,6 +340,7 @@ class LogbookController extends Controller
             'bukti_kegiatan' => 'nullable',
             'bukti_kegiatan.*' => 'file|mimes:jpg,jpeg,png,pdf|max:51200', // Max 10MB
             'is_draft' => 'nullable|boolean',
+            'tag_id' => 'nullable|integer|exists:tags,id',
         ]);
 
         if ($validator->fails()) {
@@ -371,6 +375,7 @@ class LogbookController extends Controller
         $dataToUpdate = [
             'deskripsi_kegiatan' => $input['deskripsi_kegiatan'] ?? $logbooks->deskripsi_kegiatan,
             'status_verifikasi' => $newStatus,
+            'tag_id' => array_key_exists('tag_id', $input) ? ($input['tag_id'] ?: null) : $logbooks->tag_id,
         ];
 
         // Only clear feedback if submitting (not draft)
@@ -437,7 +442,7 @@ class LogbookController extends Controller
         return response()->json([
             'success' => true,
             'message' => $message,
-            'data' => $logbooks
+            'data' => $logbooks->load('tag')
         ]);
     }
 
@@ -510,7 +515,7 @@ class LogbookController extends Controller
             ->toArray();
         $internIds = array_unique(array_filter(array_merge($direct, $viaStudents)));
 
-        $query = Logbook::with(['user'])
+        $query = Logbook::with(['user', 'tag'])
             ->whereIn('user_id', $internIds)
             ->orderBy('tanggal', 'desc');
 
@@ -621,7 +626,7 @@ class LogbookController extends Controller
         }
 
         $mahasiswaId = $target->mahasiswa?->id_mahasiswa ?? null;
-        $query = Logbook::with(['user']);
+        $query = Logbook::with(['user', 'tag']);
         if ($mahasiswaId) {
             $query->where('id_mahasiswa', $mahasiswaId);
         } else {

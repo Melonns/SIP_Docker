@@ -26,7 +26,8 @@ import {
     AlertTriangle,
     FileClock,
     ClipboardCheck,
-    BookOpen
+    BookOpen,
+    Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PageTransition from '../components/PageTransition';
@@ -245,8 +246,10 @@ const AdminLayout = () => {
     const canViewWorkingSchedule = can('view_working_schedule');
     const canViewEvaluationTemplate = can('view_evaluation_component');
 
+    const canViewLogbookTags = can('view_logbook_tags');
+
     const showAttendanceMenu = canViewPermission || canViewCorrections || canViewLogs;
-    const showMasterDataMenu = canViewUserRole || canViewUserPermission || canViewInternProfiles || canViewInternMapping || canViewOfficeLocations || canViewWorkingSchedule || canViewEvaluationTemplate;
+    const showMasterDataMenu = canViewUserRole || canViewUserPermission || canViewInternProfiles || canViewInternMapping || canViewOfficeLocations || canViewWorkingSchedule || canViewEvaluationTemplate || canViewLogbookTags;
 
     const getFirstAllowedPath = () => {
         const ordered = [
@@ -265,6 +268,7 @@ const AdminLayout = () => {
             { allowed: canViewOfficeLocations, path: '/admin/masterdata/officeLocation' },
             { allowed: canViewWorkingSchedule, path: '/admin/masterdata/workingSchedule' },
             { allowed: canViewEvaluationTemplate, path: '/admin/masterdata/evaluation' },
+            { allowed: canViewLogbookTags, path: '/admin/masterdata/tags' },
             { allowed: canViewProfile, path: '/admin/profile' }
         ];
 
@@ -293,6 +297,7 @@ const AdminLayout = () => {
             { path: '/admin/masterdata/officeLocation', allowed: canViewOfficeLocations },
             { path: '/admin/masterdata/workingSchedule', allowed: canViewWorkingSchedule },
             { path: '/admin/masterdata/evaluation', allowed: canViewEvaluationTemplate },
+            { path: '/admin/masterdata/tags', allowed: canViewLogbookTags },
             { path: '/admin/profile', allowed: canViewProfile }
         ];
 
@@ -372,6 +377,7 @@ const AdminLayout = () => {
         if (path.includes('intern-mapping') || path.includes('internmapping')) return { category: 'Master Data', title: 'Intern Mapping' };
         if (path.includes('office')) return { category: 'Master Data', title: 'Office Locations' };
         if (path.includes('schedule')) return { category: 'Master Data', title: 'Working Schedule' };
+        if (path.includes('/admin/masterdata/tags')) return { category: 'Master Data', title: 'Logbook Tags' };
 
         if (path.includes('/admin/profile')) return { category: null, title: 'Profile' };
 
@@ -559,7 +565,7 @@ const AdminLayout = () => {
                                 {expandedMenus.masterData ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                             </div>
 
-                            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedMenus.masterData ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedMenus.masterData ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
                                 <div className="ml-6 pl-4 border-l border-white/20 space-y-1 mt-1 mb-3">
                                     {canViewUserRole && (
                                         <Link to="/admin/masterdata/userRole" onClick={() => setIsSidebarOpen(false)}>
@@ -607,6 +613,13 @@ const AdminLayout = () => {
                                         <Link to="/admin/masterdata/evaluation" onClick={() => setIsSidebarOpen(false)}>
                                             <div className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 ${isActive('/admin/masterdata/evaluation') ? 'bg-[#27345A] font-bold shadow-sm' : 'text-slate-50 hover:bg-white/10 hover:text-white'}`}>
                                                 <BookOpen size={18} /> <span>Evaluation Component</span>
+                                            </div>
+                                        </Link>
+                                    )}
+                                    {canViewLogbookTags && (
+                                        <Link to="/admin/masterdata/tags" onClick={() => setIsSidebarOpen(false)}>
+                                            <div className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 ${isActive('/admin/masterdata/tags') ? 'bg-[#27345A] font-bold shadow-sm' : 'text-slate-50 hover:bg-white/10 hover:text-white'}`}>
+                                                <Tag size={18} /> <span>Logbook Tags</span>
                                             </div>
                                         </Link>
                                     )}
