@@ -866,8 +866,11 @@ const DetailInternAdmin = () => {
     setLoading(true);
     try {
       const paramsObj = { page, per_page: itemsPerPage };
-      const q = query !== undefined ? query : searchQuery;
-      if (q) paramsObj.q = q;
+      const q = String(query !== undefined ? query : searchQuery || '').trim();
+      if (q) {
+        paramsObj.q = q;
+        paramsObj.search = q;
+      }
       if (statusFilters && statusFilters.length > 0) {
         const mapped = mapStatusForLogbookApi(statusFilters);
         if (mapped.length > 0) paramsObj.status_verifikasi = mapped.join(',');
@@ -1773,7 +1776,7 @@ const DetailInternAdmin = () => {
               <div className="relative flex-1 md:w-80">
                 <input
                   type="text"
-                  placeholder="Search Intern"
+                  placeholder="Search Description"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { setSearchQuery(searchInput); setCurrentPage(1); } }}
