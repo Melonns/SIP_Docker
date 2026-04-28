@@ -26,18 +26,16 @@ services:
       retries: 5
 
   # -----------------------------------------------------
-  # 2. BACKEND (Laravel 10 - PHP 8.2)
+  # 2. BACKEND (Laravel 10 - PHP 8.4 FPM)
   # -----------------------------------------------------
-  backend:
+  backend-fpm:
     build:
       context: ./InternHub-BE
       dockerfile: Dockerfile
-    container_name: sip_backend
+    container_name: sip_backend_fpm
     restart: unless-stopped
-    ports:
-      - "8000:8000"
     volumes:
-      - ./InternHub-BE:/var/www/html
+      - ./InternHub-BE:/var/www/html:delegated
     environment:
       - DB_CONNECTION=mysql
       - DB_HOST=db
@@ -48,6 +46,24 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - sip_network
+    expose:
+      - "9000"
+
+  # --------- NGINX Web Server -----------
+  nginx:
+    build:
+      context: ./InternHub-BE
+      dockerfile: Dockerfile.nginx
+    container_name: sip_nginx
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./InternHub-BE:/var/www/html:delegated
+    depends_on:
+      - backend-fpm
     networks:
       - sip_network
 
@@ -63,8 +79,11 @@ services:
     ports:
       - "3000:5173"
     volumes:
-      - ./InternHub-FE:/app
+      - ./InternHub-FE:/app:delegated
       - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=/api
+      - VITE_PROXY_TARGET=http://nginx:8000
     networks:
       - sip_network
 

@@ -17,6 +17,7 @@
     "date-fns": "^4.1.0",
     "framer-motion": "^10.16.16",
     "html2canvas": "^1.4.1",
+    "jszip": "^3.10.1",
     "jspdf": "^4.0.0",
     "laravel-echo": "^2.3.0",
     "leaflet": "^1.9.4",
