@@ -891,7 +891,10 @@ class LogbookController extends Controller
             ->keyBy('user_id');
 
         // Get libur dates (to exclude)
-        $liburDates = \App\Models\Libur::pluck('tanggal')->toArray();
+        $liburDates = \App\Models\Libur::pluck('tanggal')->map(function($d) {
+            return ($d instanceof \Carbon\Carbon) ? $d->toDateString() : (string)$d;
+        })->toArray();
+        $liburSet = array_flip($liburDates);
 
         $result = [];
         foreach ($internIds as $uid) {
@@ -912,10 +915,30 @@ class LogbookController extends Controller
 
             $expected = 0;
             if ($periodStart->lte($periodEnd)) {
-                for ($d = $periodStart->copy(); $d->lte($periodEnd); $d->addDay()) {
-                    $ds = $d->toDateString();
-                    if ($d->isWeekend() || in_array($ds, $liburDates)) continue;
-                    $expected++;
+                // Calculate total days
+                $days = $periodStart->diffInDays($periodEnd) + 1;
+                $fullWeeks = floor($days / 7);
+                $expected = $fullWeeks * 5;
+                
+                $remainingDays = $days % 7;
+                if ($remainingDays > 0) {
+                    $startDay = $periodStart->dayOfWeek; // 0 (Sun) - 6 (Sat)
+                    for ($i = 0; $i < $remainingDays; $i++) {
+                        $currentDay = ($startDay + $i) % 7;
+                        if ($currentDay != 0 && $currentDay != 6) {
+                            $expected++;
+                        }
+                    }
+                }
+                
+                // Subtract holidays
+                foreach ($liburSet as $hDate => $_) {
+                    try {
+                        $h = \Carbon\Carbon::parse($hDate);
+                        if ($h->betweenIncluded($periodStart, $periodEnd) && !$h->isWeekend()) {
+                            $expected--;
+                        }
+                    } catch (\Throwable $e) {}
                 }
             }
 

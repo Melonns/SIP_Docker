@@ -77,12 +77,15 @@ else
     echo "Skipping seeders (RUN_SEEDERS is not true)..."
 fi
 
-# Clear all stale caches for development
-echo "🧹 Clearing Laravel caches..."
-php artisan config:clear || true
-php artisan route:clear || true
-php artisan view:clear || true
-php artisan cache:clear || true
+# Caching configuration for fast disk I/O on WSL
+echo "⚙️  Caching configuration..."
+php artisan config:cache || true
+
+echo "🛣️  Caching routes..."
+php artisan route:cache || true
+
+echo "🎨 Caching views..."
+php artisan view:cache || true
 
 echo "================================"
 echo "✨ Container ready!"
