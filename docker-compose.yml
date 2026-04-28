@@ -43,6 +43,11 @@ services:
       - DB_DATABASE=sip_docker
       - DB_USERNAME=root
       - DB_PASSWORD=sip_root_password
+      - MAIL_DRIVER=smtp
+      - MAIL_HOST=mailpit
+      - MAIL_PORT=1025
+      - MAIL_FROM_ADDRESS=noreply@SIP.com
+      - MAIL_FROM_NAME="SIP SIER"
     depends_on:
       db:
         condition: service_healthy
@@ -84,6 +89,41 @@ services:
     environment:
       - VITE_API_BASE_URL=/api
       - VITE_PROXY_TARGET=http://nginx:8000
+    networks:
+      - sip_network
+
+  # -----------------------------------------------------
+  # 4. MAILPIT (Local Email Testing)
+  # -----------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: sip_mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP port
+      - "8025:8025"  # Web UI (http://localhost:8025)
+    environment:
+      - MAILPIT_SMTP_BIND_ADDR=0.0.0.0:1025
+      - MAILPIT_UI_BIND_ADDR=0.0.0.0:8025
+    networks:
+      - sip_network
+
+  # -----------------------------------------------------
+  # 5. PHPMYADMIN (Database UI Management)
+  # -----------------------------------------------------
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: sip_phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: sip_root_password
+      PMA_DATABASE: sip_docker
+    depends_on:
+      - db
     networks:
       - sip_network
 

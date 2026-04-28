@@ -26,7 +26,7 @@ COPY . /var/www/html
 COPY opcache.ini /usr/local/etc/php/conf.d/opcache.ini
 
 # Copy PHP-FPM config
-COPY php-fpm.conf /usr/local/etc/php-fpm.conf
+COPY php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
 
 # Copy upload limits config
 COPY upload.ini /usr/local/etc/php/conf.d/upload.ini
@@ -41,32 +41,10 @@ RUN chmod +x /wait
 # Expose FPM port (Nginx will connect via TCP)
 EXPOSE 9000
 
+# Copy startup script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 # Install dependencies and start PHP-FPM
-CMD sh -c "\
-  set -e && \
-  chown -R www-data:www-data /var/www/html && \
-  chmod -R 775 /var/www/html/storage && \
-  chmod -R 775 /var/www/html/bootstrap/cache && \
-  if [ ! -f .env ]; then cp .env.example .env; fi && \
-  composer install --no-interaction && \
-  php artisan key:generate && \
-  echo 'Waiting for MySQL database...' && \
-  for i in {1..30}; do \
-    php artisan tinker --execute='DB::connection()->getPdo()' 2>/dev/null && echo 'Database ready!' && break; \
-    echo \"Attempt \$i/30 - Waiting for DB...\"; \
-    sleep 2; \
-  done && \
-  php artisan migrate --force && \
-  php artisan db:seed --class=RoleSeeder --force && \
-  php artisan db:seed --class=PermissionSeeder --force && \
-  php artisan db:seed --class=RolePermissionSeeder --force && \
-  php artisan db:seed --class=WorkScheduleSeeder --force && \
-  php artisan db:seed --class=AdminUserSeeder --force && \
-  php artisan db:seed --class=DivisionSeeder --force && \
-  php artisan db:seed --class=KaryawanSeeder --force && \
-  php artisan db:seed --class=LiburSeeder --force && \
-  php artisan db:seed --class=KomponenSeeder --force && \
-  php artisan config:cache && \
-  php artisan route:cache && \
-  php artisan view:cache && \
-  php-fpm"
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["php-fpm"]

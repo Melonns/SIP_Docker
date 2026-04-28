@@ -8,21 +8,19 @@ use App\Models\Tag;
 class TagSeeder extends Seeder
 {
     /**
-     * Seed data tag default untuk logbook.
+     * Seed data tag default untuk logbook aktivitas operasional.
      */
     public function run(): void
     {
         $tags = [
-            ['nama' => 'Pengembangan Aplikasi',  'warna' => '#3B82F6'], // blue
-            ['nama' => 'Pengujian & QA',          'warna' => '#10B981'], // emerald
-            ['nama' => 'Desain UI/UX',            'warna' => '#8B5CF6'], // violet
-            ['nama' => 'Dokumentasi',             'warna' => '#F59E0B'], // amber
-            ['nama' => 'Rapat & Koordinasi',      'warna' => '#EF4444'], // red
-            ['nama' => 'Penelitian',              'warna' => '#06B6D4'], // cyan
-            ['nama' => 'Infrastruktur & DevOps',  'warna' => '#F97316'], // orange
-            ['nama' => 'Analisis Data',           'warna' => '#EC4899'], // pink
-            ['nama' => 'Pelatihan & Workshop',    'warna' => '#6366F1'], // indigo
-            ['nama' => 'Lainnya',                 'warna' => '#6B7280'], // gray
+            ['nama' => 'Meeting & Coordination',  'warna' => '#EF4444'], // red
+            ['nama' => 'Daily Operations',        'warna' => '#3B82F6'], // blue
+            ['nama' => 'Training & Workshop',     'warna' => '#8B5CF6'], // violet
+            ['nama' => 'Maintenance & Support',   'warna' => '#F97316'], // orange
+            ['nama' => 'Project Work',            'warna' => '#10B981'], // emerald
+            ['nama' => 'Documentation',           'warna' => '#F59E0B'], // amber
+            ['nama' => 'Team Collaboration',      'warna' => '#06B6D4'], // cyan
+            ['nama' => 'Other',                   'warna' => '#6B7280'], // gray
         ];
 
         foreach ($tags as $tag) {

@@ -176,12 +176,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('logbook')->group(function () {
         Route::get('/', [LogbookController::class, 'index']);
         Route::post('/', [LogbookController::class, 'store']);
-        Route::get('/{id}/file/{filename}', [LogbookController::class, 'getFile'])->where('filename', '.*'); // Allow dots in filename
+        // Specific routes MUST come before generic {id} route
+        Route::get('/{id}/file/{filename}', [LogbookController::class, 'getFile'])->where('filename', '.*')->whereNumber('id'); // Allow dots in filename
+        Route::get('/summary/{id}', [UserController::class, 'getInternDailySummary'])->whereNumber('id');
+        // Generic {id} route LAST
         Route::get('/{id}', [LogbookController::class, 'show'])->whereNumber('id');
         Route::put('/{id}', [LogbookController::class, 'update'])->whereNumber('id');
         Route::post('/{id}', [LogbookController::class, 'update'])->whereNumber('id'); // Fallback for multipart/form-data
         Route::delete('/{id}', [LogbookController::class, 'destroy'])->whereNumber('id');
-        Route::get('/summary/{id}', [UserController::class, 'getInternDailySummary'])->whereNumber('id');
     });
 
     // ----------------------------------------------------------------------

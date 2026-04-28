@@ -802,6 +802,7 @@ export default function Presensi() {
               setIsEarlyModalOpen(true);
               setIsRequestingEarly(false);
             }
+            // Normal clock out: just close camera, let user click Clock Out button
           }
           setIsCameraOpen(false);
         };
@@ -816,6 +817,7 @@ export default function Presensi() {
             setIsEarlyModalOpen(true);
             setIsRequestingEarly(false);
           }
+          // Normal clock out: just close camera, let user click Clock Out button
         }
         setIsCameraOpen(false);
       })
@@ -881,7 +883,7 @@ export default function Presensi() {
       if (!clockOutFallbackTried && (msg.includes('already') || msg.includes('sudah') || error?.response?.status === 409)) {
         setClockOutFallbackTried(true);
         try {
-          await handleClockOut();
+          await handleClockOut({ photoData: photoOut });
           setClockOutFallbackTried(false);
           return;
         } catch (e) {
@@ -899,12 +901,14 @@ export default function Presensi() {
 
   // --- 6. HANDLE CLOCK OUT ---
   const handleClockOut = async (options = {}) => {
-    const { early = false, remark = '' } = options;
+    const { early = false, remark = '', photoData = null } = options;
     setIsSubmitting(true);
     setIsLateSubmission(false);
     try {
-      if (!photoOut) throw new Error("Photo is required!");
-      const file = await dataURLtoFile(photoOut, "selfie-out.jpg");
+      // Use passed photoData or fall back to state (prefer passed param to avoid race condition)
+      const photoToSubmit = photoData || photoOut;
+      if (!photoToSubmit) throw new Error("Photo is required!");
+      const file = await dataURLtoFile(photoToSubmit, "selfie-out.jpg");
 
       const formData = new FormData();
       formData.append("latitude", userLocation.lat);
@@ -977,7 +981,9 @@ export default function Presensi() {
     try {
       // Ensure submit UI shows immediately
       setIsSubmitting(true);
-      await handleClockOut({ early: true, remark: earlyRemark.trim() });
+      // Capture photoOut here to avoid race condition with state reset
+      const photoDataToSubmit = photoOut;
+      await handleClockOut({ early: true, remark: earlyRemark.trim(), photoData: photoDataToSubmit });
       setLastEarlyRemark(earlyRemark.trim());
       // Close modal on success
       setIsEarlyModalOpen(false);
@@ -1246,8 +1252,14 @@ export default function Presensi() {
                   {!photoOut ? (
                     <button
                       onClick={() => {
-                        // Always run the Early Clock Out flow: capture photo then require remark.
-                        setIsRequestingEarly(true);
+                        // Open camera for either normal or early clock out flow
+                        if (canClockOut) {
+                          // Normal clock out flow - time has reached scheduled clock out time
+                          setIsRequestingEarly(false);
+                        } else {
+                          // Early clock out flow - time is before scheduled clock out time
+                          setIsRequestingEarly(true);
+                        }
                         setIsCameraOpen(true);
                       }}
                       disabled={isStatusLoading || !locationStatus.isInside || isSubmitting || !isLocationLoaded}
@@ -1255,13 +1267,22 @@ export default function Presensi() {
                         ? disabledButtonStyle
                         : 'bg-white border border-[#354C8F] text-[#354C8F] font-bold hover:bg-[#EAF2FF] hover:shadow-sm'}`}
                     >
-                      <AlertTriangle size={18} />
-                      <span>Early Clock Out</span>
+                      {canClockOut ? (
+                        <>
+                          <Smartphone size={18} />
+                          <span>Clock Out</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle size={18} />
+                          <span>Early Clock Out</span>
+                        </>
+                      )}
                     </button>
                   ) : canClockOut ? (
                     <div className="flex gap-3">
                       {/* TOMBOL CLOCK OUT */}
-                      <button onClick={handleClockOut} disabled={isStatusLoading || !locationStatus.isInside || isSubmitting} className={`flex-1 py-3.5 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all ${locationStatus.isInside && !isSubmitting ? activeButtonStyle : disabledButtonStyle}`}>
+                      <button onClick={() => handleClockOut({ early: false, photoData: photoOut })} disabled={isStatusLoading || !locationStatus.isInside || isSubmitting} className={`flex-1 py-3.5 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all ${locationStatus.isInside && !isSubmitting ? activeButtonStyle : disabledButtonStyle}`}>
                         {isSubmitting ? <><Loader2 size={20} className="animate-spin" /> Processing...</> : <>
                           {locationStatus.isInside ? <Smartphone size={20} /> : <MapPin size={20} />}
                           {locationStatus.isInside ? "Clock Out Now" : "Outside Area"}

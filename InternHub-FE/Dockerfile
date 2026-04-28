@@ -16,12 +16,5 @@ COPY . .
 # Expose Vite's default dev port
 EXPOSE 5173
 
-# Start Vite dev server on all networks, generate .env from docker-compose env vars
-CMD sh -c "\
-  if [ ! -f .env ]; then cp .env.example .env; fi && \
-  echo 'VITE_API_BASE_URL='${VITE_API_BASE_URL:-/api} > .env.docker && \
-  echo 'VITE_PROXY_TARGET='${VITE_PROXY_TARGET:-http://localhost:8000} >> .env.docker && \
-  echo 'VITE_PUSHER_APP_KEY='${VITE_PUSHER_APP_KEY} >> .env.docker && \
-  echo 'VITE_PUSHER_APP_CLUSTER='${VITE_PUSHER_APP_CLUSTER} >> .env.docker && \
-  cat .env.docker >> .env && \
-  npm run dev -- --host"
+# Start Vite dev server on all networks
+CMD ["npm", "run", "dev", "--", "--host"]

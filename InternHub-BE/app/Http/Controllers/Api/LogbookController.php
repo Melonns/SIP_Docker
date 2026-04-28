@@ -1057,11 +1057,14 @@ class LogbookController extends Controller
         $isValidFile = false;
         $targetPath = '';
 
+        // Decode URL-encoded filename to handle spaces and special chars
+        $decodedFilename = urldecode($filename);
+
         if (is_array($files)) {
             foreach ($files as $path) {
                 // path in db: "storage/logbooks/filename.pdf"
                 // we check if the requested filename matches the basename
-                if (basename($path) === $filename) {
+                if (basename($path) === $decodedFilename) {
                     $isValidFile = true;
                     $targetPath = $path; // "storage/logbooks/..."
                     break;

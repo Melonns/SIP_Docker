@@ -1,0 +1,4 @@
+public/storage
+vendor/
+node_modules/
+.env
