@@ -26,6 +26,7 @@ class DatabaseSeeder extends Seeder
             KomponenSeeder::class,
             TagSeeder::class,
             CertificateTemplateSeeder::class,
+            DivisionSeeder::class,
         ]);
 
         // Get roles

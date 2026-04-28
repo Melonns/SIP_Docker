@@ -57,7 +57,16 @@ CMD sh -c "\
     sleep 2; \
   done && \
   php artisan migrate --force && \
+  php artisan db:seed --class=RoleSeeder --force && \
+  php artisan db:seed --class=PermissionSeeder --force && \
+  php artisan db:seed --class=RolePermissionSeeder --force && \
+  php artisan db:seed --class=WorkScheduleSeeder --force && \
   php artisan db:seed --class=AdminUserSeeder --force && \
+  php artisan db:seed --class=DivisionSeeder --force && \
+  php artisan db:seed --class=KaryawanSeeder --force && \
+  php artisan db:seed --class=LiburSeeder --force && \
+  php artisan db:seed --class=KomponenSeeder --force && \
+  php artisan db:seed --class=UniversitiesTableSeeder --force && \
   php artisan config:cache && \
   php artisan route:cache && \
   php artisan view:cache && \
