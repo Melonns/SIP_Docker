@@ -66,7 +66,6 @@ CMD sh -c "\
   php artisan db:seed --class=KaryawanSeeder --force && \
   php artisan db:seed --class=LiburSeeder --force && \
   php artisan db:seed --class=KomponenSeeder --force && \
-  php artisan db:seed --class=UniversitiesTableSeeder --force && \
   php artisan config:cache && \
   php artisan route:cache && \
   php artisan view:cache && \
