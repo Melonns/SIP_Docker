@@ -13,12 +13,21 @@ if [ ! -f .env ]; then
     cp .env.example .env
 fi
 
-# Install composer dependencies
-# Composer install removed for fast startup
+# Install composer dependencies if vendor folder is missing
+if [ ! -d "vendor" ]; then
+    echo "📦 Vendor folder not found. Installing composer dependencies..."
+    composer install --no-interaction --optimize-autoloader
+else
+    echo "📦 Vendor folder exists, skipping composer install."
+fi
 
-# Generate app key
-echo "🔑 Generating application key..."
-php artisan key:generate || true
+# Generate app key if not present
+if [ -f .env ] && ! grep -q "APP_KEY=base64" .env; then
+    echo "🔑 Generating application key..."
+    php artisan key:generate || true
+else
+    echo "🔑 Application key already exists, skipping."
+fi
 
 # Wait for MySQL database
 echo "⏳ Waiting for MySQL database..."
@@ -47,7 +56,9 @@ php artisan migrate --force || true
 
 # Create storage link for public access
 echo "🔗 Creating storage link..."
-php artisan storage:link || true
+if [ ! -L public/storage ]; then
+    php artisan storage:link || true
+fi
 
 # Run seeders (only if explicitly requested via RUN_SEEDERS=true)
 if [ "$RUN_SEEDERS" = "true" ]; then
@@ -66,20 +77,12 @@ else
     echo "Skipping seeders (RUN_SEEDERS is not true)..."
 fi
 
-# Cache configuration
-echo "⚙️  Caching configuration..."
-php artisan config:cache || true
-
-# Cache routes
-echo "🛣️  Caching routes..."
-php artisan route:cache || true
-
-# Cache views (with timeout to prevent hanging)
-echo "🎨 Caching Blade views..."
-timeout 60 php artisan view:cache || {
-    echo "⚠️  View cache failed or timed out, continuing without caching..."
-    php artisan view:clear || true
-}
+# Clear all stale caches for development
+echo "🧹 Clearing Laravel caches..."
+php artisan config:clear || true
+php artisan route:clear || true
+php artisan view:clear || true
+php artisan cache:clear || true
 
 echo "================================"
 echo "✨ Container ready!"
