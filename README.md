@@ -1,4 +1,4 @@
-# SIP (Sistem Informasi Pemagangan) - Docker Deployment
+# SIP (SIER Internship Program) - Docker Deployment
 
 Repository ini berisi konfigurasi Docker untuk menjalankan aplikasi **SIP** secara lokal baik untuk Frontend maupun Backend.
 
