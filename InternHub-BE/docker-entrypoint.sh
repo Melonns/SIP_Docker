@@ -60,19 +60,24 @@ if [ ! -L public/storage ]; then
     php artisan storage:link || true
 fi
 
-# Run seeders (only if explicitly requested via RUN_SEEDERS=true)
+# Run seeders (only if explicitly requested via RUN_SEEDERS=true and not run yet)
 if [ "$RUN_SEEDERS" = "true" ]; then
-    echo "Running seeders..."
-    php artisan db:seed --class=RoleSeeder --force || true
-    php artisan db:seed --class=PermissionSeeder --force || true
-    php artisan db:seed --class=RolePermissionSeeder --force || true
-    php artisan db:seed --class=WorkScheduleSeeder --force || true
-    php artisan db:seed --class=AdminUserSeeder --force || true
-    php artisan db:seed --class=DivisionSeeder --force || true
-    php artisan db:seed --class=KaryawanSeeder --force || true
-    php artisan db:seed --class=LiburSeeder --force || true
-    php artisan db:seed --class=KomponenSeeder --force || true
-    php artisan db:seed --class=TagSeeder --force || true
+    if [ ! -f .seeders_run ]; then
+        echo "Running seeders list..."
+        php artisan db:seed --class=RoleSeeder --force || true
+        php artisan db:seed --class=PermissionSeeder --force || true
+        php artisan db:seed --class=RolePermissionSeeder --force || true
+        php artisan db:seed --class=WorkScheduleSeeder --force || true
+        php artisan db:seed --class=AdminUserSeeder --force || true
+        php artisan db:seed --class=DivisionSeeder --force || true
+        php artisan db:seed --class=KaryawanSeeder --force || true
+        php artisan db:seed --class=LiburSeeder --force || true
+        php artisan db:seed --class=KomponenSeeder --force || true
+        php artisan db:seed --class=TagSeeder --force || true
+        touch .seeders_run
+    else
+        echo "Skipping seeders (already run once via .seeders_run file)..."
+    fi
 else
     echo "Skipping seeders (RUN_SEEDERS is not true)..."
 fi

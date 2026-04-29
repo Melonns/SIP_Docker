@@ -234,7 +234,7 @@ const DepartmentChart = memo(({ data }) => {
       )}
 
       {/* Center total */}
-      <div className={`absolute top-1/2 -translate-y-1/2 text-center pointer-events-none`} style={{ left: isSmall ? undefined : cxValue }}>
+      <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none" style={{ left: isSmall ? '50%' : cxValue }}>
         <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Total</span>
         <span className="text-xl font-extrabold text-[#203266]">{total}</span>
       </div>
@@ -442,17 +442,19 @@ const DashboardAdmin = () => {
           const stat = payload.statistik_bulanan || {};
 
           const buildMonthRange = (startIso, endIso) => {
-            if (!startIso || !endIso) return indoMonths.slice(0, 6);
+            if (!startIso || !endIso) return [];
             const start = new Date(startIso);
             const end = new Date(endIso);
             const months = [];
             const cur = new Date(start.getFullYear(), start.getMonth(), 1);
             const last = new Date(end.getFullYear(), end.getMonth(), 1);
             while (cur <= last) {
-              months.push(cur.getMonth());
+              const mIdx = cur.getMonth() + 1; // 1-12
+              const year = cur.getFullYear();
+              months.push(`${year}-${String(mIdx).padStart(2, '0')}`);
               cur.setMonth(cur.getMonth() + 1);
             }
-            return months.map(mIdx => indoMonths[mIdx]);
+            return months;
           };
 
           const startIso = payload.filter_period?.start || (startDate ? `${startDate}-01` : null);
@@ -460,9 +462,14 @@ const DashboardAdmin = () => {
           const monthKeys = buildMonthRange(startIso, endIso);
 
           const chart = monthKeys.map(m => {
-            const d = stat[m];
+            const d = stat[m]; // Key is "YYYY-MM"
+            const [year, month] = m.split('-');
+            const mIdx = parseInt(month, 10) - 1;
+            const mName = indoMonths[mIdx] || '';
+            const shortMonth = monthAbbr[mName] ?? mName.slice(0, 3);
+            const shortYear = `'${year.slice(-2)}`;
             return {
-              name: monthAbbr[m] ?? m.slice(0, 3),
+              name: `${shortMonth} ${shortYear}`.trim(),
               OnTime: d?.present ?? 0,
               Early: d?.early ?? 0,
               Absent: d?.absent ?? 0,

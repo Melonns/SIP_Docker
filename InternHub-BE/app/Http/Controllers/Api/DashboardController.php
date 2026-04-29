@@ -1070,7 +1070,7 @@ class DashboardController extends Controller
             $rangeStart = $monthStart->gt($start) ? $monthStart->copy() : $start->copy();
             $rangeEnd = $monthEnd->lt($end) ? $monthEnd->copy() : $end->copy();
 
-            $label = $monthStart->locale('id')->isoFormat('MMMM');
+            $label = $monthStart->format('Y-m');
             if ($rangeStart->gt($todayObj)) {
                 $stat_month_admin[$label] = null;
                 $periodAdmin->addMonth();
@@ -1189,7 +1189,7 @@ class DashboardController extends Controller
         $period = Carbon::parse($start)->copy();
         while ($period->lte($end)) {
             $monthStart = $period->copy()->startOfMonth();
-            $label = $monthStart->locale('id')->isoFormat('MMMM');
+            $label = $monthStart->format('Y-m');
             $m = intval($monthStart->month);
             $y = intval($monthStart->year);
             if (!array_key_exists($label, $stat_month_admin) || is_null($stat_month_admin[$label])) {
