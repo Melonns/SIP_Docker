@@ -48,6 +48,7 @@ services:
       - MAIL_PORT=1025
       - MAIL_FROM_ADDRESS=noreply@SIP.com
       - MAIL_FROM_NAME="SIP SIER"
+      - RUN_SEEDERS=true
     depends_on:
       db:
         condition: service_healthy
