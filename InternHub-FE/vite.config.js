@@ -25,13 +25,20 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: true,
+      watch: {
+        usePolling: true,
+        interval: 1000,
+      },
+      hmr: {
+        clientPort: 3000,
+      },
       // Mengizinkan domain Ngrok di server, atau localhost di laptop
-      allowedHosts: [ 'localhost:5173', 'dev-sip.sier.id'], 
+      allowedHosts: [ 'localhost:5173', 'localhost:3000', 'dev-sip.sier.id'], 
       proxy: {
         '/api': {
           // DIAMBIL DARI .env Masing-masing
           target: env.VITE_PROXY_TARGET || 'http://localhost:8000',
-          changeOrigin: true,
+          changeOrigin: false,
           secure: false,
           configure: (proxy) => {
             // Convert 404 → 204 for photo/blob endpoints so the browser
@@ -57,7 +64,7 @@ export default defineConfig(({ mode }) => {
         ,
         '/storage': {
           target: env.VITE_PROXY_TARGET || 'http://localhost:8000',
-          changeOrigin: true,
+          changeOrigin: false,
           secure: false,
         }
       },

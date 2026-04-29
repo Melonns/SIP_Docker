@@ -34,7 +34,7 @@ class KaryawanSeeder extends Seeder
         $adminUser = User::updateOrCreate(
             ['email' => 'admin@internhub.com'],
             [
-                'password' => Hash::make('password123'),
+                'password' => Hash::make('admin123'),
                 'nama' => 'Administrator',
                 'email' => 'admin@internhub.com',
                 'status' => 'active',
@@ -64,7 +64,7 @@ class KaryawanSeeder extends Seeder
         $mentorUser = User::updateOrCreate(
             ['email' => 'dewi@internhub.com'],
             [
-                'password' => Hash::make('password123'),
+                'password' => Hash::make('mentor123'),
                 'nama' => 'Dewi Lestari',
                 'email' => 'dewi@internhub.com',
                 'status' => 'active',
@@ -94,7 +94,7 @@ class KaryawanSeeder extends Seeder
         $mentorUser2 = User::updateOrCreate(
             ['email' => 'budi@internhub.com'],
             [
-                'password' => Hash::make('password123'),
+                'password' => Hash::make('budi123'),
                 'nama' => 'Budi Santoso',
                 'email' => 'budi@internhub.com',
                 'status' => 'active',

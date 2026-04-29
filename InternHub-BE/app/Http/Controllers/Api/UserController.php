@@ -1004,7 +1004,20 @@ class UserController extends Controller
             $liburSet = array_flip($liburDates);
             $today = Carbon::now()->endOfDay();
 
-            $computed = $allInterns->map(function ($intern) use ($liburDates, $liburSet, $today, $request) {
+            $allAgg = \DB::table('logbooks')
+                ->select('user_id',
+                    \DB::raw('COUNT(*) as total'),
+                    \DB::raw("SUM(CASE WHEN status_verifikasi = 'verified' THEN 1 ELSE 0 END) as verified"),
+                    \DB::raw("SUM(CASE WHEN status_verifikasi = 'pending' THEN 1 ELSE 0 END) as pending"),
+                    \DB::raw("SUM(CASE WHEN status_verifikasi = 'revision_needed' THEN 1 ELSE 0 END) as revision_needed"),
+                    \DB::raw('MAX(tanggal) as last_submission')
+                )
+                ->whereIn('user_id', $allInterns->pluck('user_id'))
+                ->groupBy('user_id')
+                ->get()
+                ->keyBy('user_id');
+
+            $computed = $allInterns->map(function ($intern) use ($liburDates, $liburSet, $today, $request, $allAgg) {
                 // Determine per-intern period. If caller provided start_date & end_date, use that period (support YYYY-MM month ranges),
                 // otherwise use intern's mulai_magang -> today (cap to akhir_magang when present)
                 if ($request->filled('start_date')) {
@@ -1049,27 +1062,35 @@ class UserController extends Controller
                 }
 
                 // Aggregate logbooks counts for this intern in its own period
-                $agg = \DB::table('logbooks')
-                    ->select(\DB::raw('COUNT(*) as total'),
-                        \DB::raw("SUM(CASE WHEN status_verifikasi = 'verified' THEN 1 ELSE 0 END) as verified"),
-                        \DB::raw("SUM(CASE WHEN status_verifikasi = 'pending' THEN 1 ELSE 0 END) as pending"),
-                        \DB::raw("SUM(CASE WHEN status_verifikasi = 'revision_needed' THEN 1 ELSE 0 END) as revision_needed"),
-                        \DB::raw('MAX(tanggal) as last_submission')
-                    )
-                    ->where('user_id', $intern->user_id)
-                    ->whereBetween('tanggal', [$periodStart->toDateString(), $periodEnd->toDateString()])
-                    ->first();
+                $agg = isset($allAgg[$intern->user_id]) ? $allAgg[$intern->user_id] : (object)['total' => 0, 'verified' => 0, 'pending' => 0, 'revision_needed' => 0, 'last_submission' => null];
 
-                if (!$agg) {
-                    $agg = (object)['total' => 0, 'verified' => 0, 'pending' => 0, 'revision_needed' => 0, 'last_submission' => null];
-                }
 
                 $expected = 0;
                 if ($periodStart->lte($periodEnd)) {
-                    for ($d = $periodStart->copy(); $d->lte($periodEnd); $d->addDay()) {
-                        $ds = $d->toDateString();
-                        if ($d->isWeekend() || isset($liburSet[$ds])) continue;
-                        $expected++;
+                    // Calculate total days
+                    $days = $periodStart->diffInDays($periodEnd) + 1;
+                    $fullWeeks = floor($days / 7);
+                    $expected = $fullWeeks * 5;
+                    
+                    $remainingDays = $days % 7;
+                    if ($remainingDays > 0) {
+                        $startDay = $periodStart->dayOfWeek; // 0 (Sun) - 6 (Sat)
+                        for ($i = 0; $i < $remainingDays; $i++) {
+                            $currentDay = ($startDay + $i) % 7;
+                            if ($currentDay != 0 && $currentDay != 6) {
+                                $expected++;
+                            }
+                        }
+                    }
+                    
+                    // Subtract holidays
+                    foreach ($liburSet as $hDate => $_) {
+                        try {
+                            $h = \Carbon\Carbon::parse($hDate);
+                            if ($h->betweenIncluded($periodStart, $periodEnd) && !$h->isWeekend()) {
+                                $expected--;
+                            }
+                        } catch (\Exception $e) {}
                     }
                 }
 
@@ -1871,6 +1892,8 @@ class UserController extends Controller
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'status_verifikasi' => 'nullable|string',
+            'q' => 'nullable|string',
+            'search' => 'nullable|string',
         ]);
 
         // // Authorization: Admin or Mentor only
@@ -1984,7 +2007,7 @@ class UserController extends Controller
         if ($mahasiswaId) { $logbookQuery->where('id_mahasiswa', $mahasiswaId); } else { $logbookQuery->where('user_id', $intern->user_id); }
         $logbooksByDate = $logbookQuery
             ->whereBetween('tanggal', [$periodStart->toDateString(), $periodEnd->toDateString()])
-            ->select('tanggal', 'status_verifikasi')
+            ->select('tanggal', 'status_verifikasi', 'deskripsi_kegiatan')
             ->get()
             ->groupBy('tanggal')
             ->mapWithKeys(function ($logs, $date) {
@@ -1994,6 +2017,8 @@ class UserController extends Controller
                 return [$dateStr => $logs];
             })
             ->all();
+
+        $searchQuery = strtolower(trim((string) ($request->q ?? $request->search ?? '')));
 
         // Prefetch approved leave_requests spanning the period and approved koreksi per date so daily-summary reflects them
         $leaveQuery = \App\Models\Izin::query();
@@ -2060,8 +2085,6 @@ class UserController extends Controller
         foreach ($allWorkingDays as $tanggal) {
             $hasAttendance = isset($attendanceByDate[$tanggal]);
             $logbooks = $logbooksByDate[$tanggal] ?? null;
-            
-            $includeDay = false;
 
             // If status filter includes not_yet and optionally other statuses, handle both
             $includeNotYet = $statusFilterParsed['include_not_yet'] ?? false;
@@ -2089,14 +2112,21 @@ class UserController extends Controller
                 }
             }
 
-            if ($request->filled('status_verifikasi')) {
-                if ($matched) $summaryData[] = $tanggal;
-            } else {
-                // No status filter: include all working days (attendance/logbooks/empty)
-                $summaryData[] = $tanggal;
+            $hasMatchedDescription = true;
+            if ($searchQuery !== '') {
+                $hasMatchedDescription = false;
+                if ($logbooks) {
+                    $hasMatchedDescription = $logbooks->contains(function ($log) use ($searchQuery) {
+                        $desc = strtolower((string) ($log->deskripsi_kegiatan ?? ''));
+                        return $desc !== '' && str_contains($desc, $searchQuery);
+                    });
+                }
             }
-            
-            if ($includeDay) {
+
+            $shouldInclude = $request->filled('status_verifikasi') ? $matched : true;
+            $shouldInclude = $shouldInclude && $hasMatchedDescription;
+
+            if ($shouldInclude) {
                 $summaryData[] = $tanggal;
             }
         }
@@ -2133,7 +2163,7 @@ class UserController extends Controller
                 ->first();
 
             // Get logbooks for this date (first logbooks if multiple)
-            $logbookQuery = \App\Models\Logbook::query();
+            $logbookQuery = \App\Models\Logbook::with(['tag:id,nama']);
             if ($mahasiswaId) { $logbookQuery->where('id_mahasiswa', $mahasiswaId); } else { $logbookQuery->where('user_id', $intern->user_id); }
             $logbooks = $logbookQuery->where('tanggal', $tanggalStr)->first();
 
@@ -2218,6 +2248,11 @@ class UserController extends Controller
                 ] : null,
                 'logbooks' => $logbooks ? [
                     'logbooks_id' => $logbooks->id_logbooks,
+                    'tag_id' => $logbooks->tag_id,
+                    'tag' => $logbooks->tag ? [
+                        'id' => $logbooks->tag->id,
+                        'nama' => $logbooks->tag->nama,
+                    ] : null,
                     'deskripsi_kegiatan' => $logbooks->deskripsi_kegiatan,
                     'bukti_kegiatan' => $logbooks->bukti_kegiatan ? (is_array($logbooks->bukti_kegiatan) ? array_map(fn($f) => url("/api/logbook/" . $logbooks->id_logbooks . "/file/" . basename($f)), $logbooks->bukti_kegiatan) : url("/api/logbook/" . $logbooks->id_logbooks . "/file/" . basename($logbooks->bukti_kegiatan))) : null,
                     'status_verifikasi' => $logbooks->status_verifikasi,

@@ -355,20 +355,21 @@ const PermissionApproval = () => {
         }
     };
 
-    useEffect(() => {
-        fetchData(1);
-    }, []);
-
-    const _appliedFirstRun = useRef(true);
-    useEffect(() => {
-        if (_appliedFirstRun.current) { _appliedFirstRun.current = false; return; }
-        fetchData(1);
-    }, [appliedFilterType, appliedFilterStatus, appliedFilterMonth, appliedFilterYear]);
+    const isFirstRender = useRef(true);
 
     useEffect(() => {
-        const t = setTimeout(() => fetchData(1), 400);
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            fetchData(1);
+            return;
+        }
+
+        const t = setTimeout(() => {
+            fetchData(1);
+        }, 400);
+
         return () => clearTimeout(t);
-    }, [searchTerm, itemsPerPage]);
+    }, [searchTerm, itemsPerPage, appliedFilterType, appliedFilterStatus, appliedFilterMonth, appliedFilterYear]);
 
     const handlePageChange = (pageNumber) => {
         if (pageNumber >= 1 && pageNumber <= totalPages) fetchData(pageNumber);
@@ -617,7 +618,20 @@ const PermissionApproval = () => {
                         </thead>
                         <tbody className="text-sm text-slate-600">
                             {loading ? (
-                                <tr><td colSpan="11" className="p-12 text-center"><div className="flex flex-col items-center justify-center"><Loader2 className="animate-spin text-[#354C8F] mb-2" size={24} /><span className="text-slate-400">Loading data...</span></div></td></tr>
+                                Array.from({ length: 5 }).map((_, idx) => (
+                                    <tr key={`skeleton-${idx}`} className="border-b border-slate-50 animate-pulse">
+                                        <td className="p-3 text-center"><div className="w-4 h-4 bg-slate-200 rounded mx-auto"></div></td>
+                                        <td className="p-3 text-center"><div className="w-6 h-4 bg-slate-200 rounded mx-auto"></div></td>
+                                        <td className="p-3"><div className="w-32 h-4 bg-slate-200 rounded"></div></td>
+                                        <td className="p-3"><div className="w-24 h-4 bg-slate-200 rounded"></div></td>
+                                        <td className="p-3 text-center"><div className="w-16 h-6 bg-slate-200 rounded-lg mx-auto"></div></td>
+                                        <td className="p-3"><div className="w-28 h-4 bg-slate-200 rounded"></div></td>
+                                        <td className="p-3"><div className="w-24 h-4 bg-slate-200 rounded"></div></td>
+                                        <td className="p-3"><div className="w-32 h-4 bg-slate-200 rounded"></div></td>
+                                        <td className="p-3 text-center"><div className="w-28 h-8 bg-slate-200 rounded-lg mx-auto"></div></td>
+                                        <td className="p-3 text-center"><div className="w-8 h-8 bg-slate-200 rounded-lg mx-auto"></div></td>
+                                    </tr>
+                                ))
                             ) : displayData.length > 0 ? (
                                 currentItems.map((item, index) => (
                                     <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">

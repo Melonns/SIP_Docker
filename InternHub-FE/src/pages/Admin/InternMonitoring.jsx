@@ -438,31 +438,19 @@ const InternMonitoring = () => {
         }
     };
 
-    useEffect(() => {
-        if (initialFetched.current) return;
-        initialFetched.current = true;
-        fetchInterns(1);
-    }, []);
+    const isFirstRender = useRef(true);
 
-    // refetch when period changes (but not on initial render)
     useEffect(() => {
-        if (!dateChangedByUser.current) {
-            dateChangedByUser.current = true;
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            fetchInterns(1);
             return;
         }
-        fetchInterns(1);
-    }, [startDate, endDate]);
-
-    // debounce search
-    useEffect(() => {
+        
+        // Debounce subsequent filter changes
         const t = setTimeout(() => fetchInterns(1), 400);
         return () => clearTimeout(t);
-    }, [searchTerm]);
-
-    // refetch when itemsPerPage changes
-    useEffect(() => {
-        fetchInterns(1);
-    }, [itemsPerPage]);
+    }, [startDate, endDate, searchTerm, itemsPerPage]);
 
     const handlePageChange = (page) => {
         if (page >= 1 && page <= totalPages) {
@@ -614,7 +602,23 @@ const InternMonitoring = () => {
                         </thead>
                         <tbody className="text-xs md:text-sm text-slate-600">
                             {loading ? (
-                                <tr><td colSpan="8" className="p-8 text-center"><div className="flex flex-col items-center justify-center"><Loader2 className="animate-spin text-[#354C8F] mb-2" size={24} /><span className="text-slate-400">Loading interns...</span></div></td></tr>
+                                Array.from({ length: 5 }).map((_, idx) => (
+                                    <tr key={`skeleton-${idx}`} className="border-b border-slate-50 animate-pulse">
+                                        <td className="p-4 text-center"><div className="w-6 h-4 bg-slate-200 rounded mx-auto"></div></td>
+                                        <td className="p-4">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-8 h-8 bg-slate-200 rounded-full"></div>
+                                                <div className="w-32 h-4 bg-slate-200 rounded"></div>
+                                            </div>
+                                        </td>
+                                        <td className="p-4"><div className="w-28 h-4 bg-slate-200 rounded"></div></td>
+                                        <td className="p-4"><div className="w-24 h-4 bg-slate-200 rounded"></div></td>
+                                        <td className="p-4"><div className="w-16 h-16 bg-slate-200 rounded-full"></div></td>
+                                        <td className="p-4 text-center"><div className="w-10 h-6 bg-slate-200 rounded mx-auto"></div></td>
+                                        <td className="p-4"><div className="w-32 h-4 bg-slate-200 rounded"></div></td>
+                                        <td className="p-4 text-center"><div className="w-8 h-8 bg-slate-200 rounded-lg mx-auto"></div></td>
+                                    </tr>
+                                ))
                             ) : displayInterns.length > 0 ? (
                                 displayInterns.map((item, index) => (
                                     <tr key={item.id} className={`transition-colors border-b border-slate-50 last:border-none font-medium ${item.isActive ? 'hover:bg-slate-50' : 'bg-slate-200 text-slate-500'}`}>

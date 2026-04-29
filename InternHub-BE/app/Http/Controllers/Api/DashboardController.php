@@ -426,7 +426,10 @@ class DashboardController extends Controller
         $today = Carbon::today();
 
         // Ambil semua tanggal libur nasional
-        $liburDates = \App\Models\Libur::pluck('tanggal')->toArray();
+        $liburDates = \App\Models\Libur::pluck('tanggal')->map(function($d) {
+            return ($d instanceof \Carbon\Carbon) ? $d->toDateString() : (string)$d;
+        })->toArray();
+        $liburSet = array_flip($liburDates);
 
         // Penentuan periode yang diminta:
         // 1) Jika disediakan BOTH start_date & end_date => gunakan rentang eksak (per-hari)
@@ -652,9 +655,14 @@ class DashboardController extends Controller
             ->whereIn('user_id', $internIds)
             ->where(function($q){ $q->where('status', 'approved')->orWhere('status_admin', 'approved'); })
             ->get();
-        $leave_requestsMap = [];
+        
+        $internLeaveDates = [];
         foreach ($leave_requestsAgg as $item) {
-            $leave_requestsMap[$item->user_id][] = $item;
+            $startI = Carbon::parse($item->tanggal_mulai)->startOfDay();
+            $endI = $item->tanggal_selesai ? Carbon::parse($item->tanggal_selesai)->startOfDay() : $startI->copy();
+            for ($dl = $startI->copy(); $dl->lte($endI); $dl->addDay()) {
+                $internLeaveDates[$item->user_id][$dl->toDateString()] = $item->jenis_izin ?? 'izin';
+            }
         }
 
         // Build statistik bulanan
@@ -708,7 +716,7 @@ class DashboardController extends Controller
 
                 for ($d = $internStart->copy(); $d->lte($internEnd); $d->addDay()) {
                     $date = $d->toDateString();
-                    if ($d->isWeekend() || in_array($date, $liburDates))
+                    if ($d->isWeekend() || isset($liburSet[$date]))
                         continue;
 
                     $absenRow = isset($absensiMap[$uid][$date]) ? $absensiMap[$uid][$date] : null;
@@ -716,16 +724,9 @@ class DashboardController extends Controller
                     $hasPulang = $absenRow && $absenRow->pulang > 0;
                     $isLate = $absenRow && $absenRow->telat > 0;
 
-                    // Cari leave_requests untuk tanggal tersebut (if any)
-                    $leave_requestsToday = null;
-                    if (isset($leave_requestsMap[$uid])) {
-                        foreach ($leave_requestsMap[$uid] as $iz) {
-                            if (Carbon::parse($iz->tanggal_mulai)->toDateString() <= $date && Carbon::parse($iz->tanggal_selesai)->toDateString() >= $date) {
-                                $leave_requestsToday = $iz;
-                                break;
-                            }
-                        }
-                    }
+                    // Cari leave_requests untuk tanggal tersebut (O(1) lookup)
+                    $leave_requestsTodayType = isset($internLeaveDates[$uid][$date]) ? $internLeaveDates[$uid][$date] : null;
+                    $leave_requestsToday = $leave_requestsTodayType ? (object)['jenis_izin' => $leave_requestsTodayType] : null;
 
                     if ($hasMasuk && $hasPulang) {
                         $present++;
@@ -1048,9 +1049,14 @@ class DashboardController extends Controller
             ->whereIn('user_id', $internIdsAll)
             ->where('status', 'approved')
             ->get();
-        $leave_requestsMapAdmin = [];
+        
+        $internLeaveDatesAdmin = [];
         foreach ($leave_requestsAggAdmin as $item) {
-            $leave_requestsMapAdmin[$item->user_id][] = $item;
+            $startI = Carbon::parse($item->tanggal_mulai)->startOfDay();
+            $endI = $item->tanggal_selesai ? Carbon::parse($item->tanggal_selesai)->startOfDay() : $startI->copy();
+            for ($dl = $startI->copy(); $dl->lte($endI); $dl->addDay()) {
+                $internLeaveDatesAdmin[$item->user_id][$dl->toDateString()] = $item->jenis_izin ?? 'izin';
+            }
         }
 
         $stat_month_admin = [];
@@ -1064,7 +1070,7 @@ class DashboardController extends Controller
             $rangeStart = $monthStart->gt($start) ? $monthStart->copy() : $start->copy();
             $rangeEnd = $monthEnd->lt($end) ? $monthEnd->copy() : $end->copy();
 
-            $label = $monthStart->locale('id')->isoFormat('MMMM');
+            $label = $monthStart->format('Y-m');
             if ($rangeStart->gt($todayObj)) {
                 $stat_month_admin[$label] = null;
                 $periodAdmin->addMonth();
@@ -1103,7 +1109,7 @@ class DashboardController extends Controller
 
                 for ($d = $internStart->copy(); $d->lte($internEnd); $d->addDay()) {
                     $date = $d->toDateString();
-                    if ($d->isWeekend() || in_array($date, $liburDates))
+                    if ($d->isWeekend() || isset($liburSet[$date]))
                         continue;
 
                     $absRow = isset($absensiMapAdmin[$uid][$date]) ? $absensiMapAdmin[$uid][$date] : null;
@@ -1111,16 +1117,9 @@ class DashboardController extends Controller
                     $hasPulang = $absRow && $absRow->pulang > 0;
                     $isLate = $absRow && $absRow->telat > 0;
 
-                    // cari leave_requests
-                    $leave_requestsToday = null;
-                    if (isset($leave_requestsMapAdmin[$uid])) {
-                        foreach ($leave_requestsMapAdmin[$uid] as $iz) {
-                            if (Carbon::parse($iz->tanggal_mulai)->toDateString() <= $date && Carbon::parse($iz->tanggal_selesai)->toDateString() >= $date) {
-                                $leave_requestsToday = $iz;
-                                break;
-                            }
-                        }
-                    }
+                    // Cari leave_requests untuk tanggal tersebut (O(1) lookup)
+                    $leave_requestsTodayType = isset($internLeaveDatesAdmin[$uid][$date]) ? $internLeaveDatesAdmin[$uid][$date] : null;
+                    $leave_requestsToday = $leave_requestsTodayType ? (object)['jenis_izin' => $leave_requestsTodayType] : null;
 
                     if ($hasMasuk && $hasPulang) {
                         $present++;
@@ -1190,7 +1189,7 @@ class DashboardController extends Controller
         $period = Carbon::parse($start)->copy();
         while ($period->lte($end)) {
             $monthStart = $period->copy()->startOfMonth();
-            $label = $monthStart->locale('id')->isoFormat('MMMM');
+            $label = $monthStart->format('Y-m');
             $m = intval($monthStart->month);
             $y = intval($monthStart->year);
             if (!array_key_exists($label, $stat_month_admin) || is_null($stat_month_admin[$label])) {

@@ -445,30 +445,19 @@ const InternMonitoring = () => {
         }
     };
 
-    useEffect(() => {
-        if (initialFetched.current) return;
-        initialFetched.current = true;
-        fetchInterns(1);
-    }, []);
+    const isFirstRender = useRef(true);
 
-    // refetch when period changes (but not on initial render)
     useEffect(() => {
-        if (!initialFetched.current) return; // skip if component just mounted
-        fetchInterns(1);
-    }, [startDate, endDate]);
-
-    // debounce search
-    useEffect(() => {
-        if (!initialFetched.current) return; // skip if component just mounted
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            fetchInterns(1);
+            return;
+        }
+        
+        // Debounce subsequent filter changes
         const t = setTimeout(() => fetchInterns(1), 400);
         return () => clearTimeout(t);
-    }, [searchTerm]);
-
-    // refetch when itemsPerPage changes
-    useEffect(() => {
-        if (!initialFetched.current) return; // skip if component just mounted
-        fetchInterns(1);
-    }, [itemsPerPage]);
+    }, [startDate, endDate, searchTerm, itemsPerPage]);
 
     const handlePageChange = (page) => {
         if (page >= 1 && page <= totalPages) {

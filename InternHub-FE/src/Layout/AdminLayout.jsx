@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 import {
     LayoutDashboard,
     Clock,
@@ -26,7 +26,8 @@ import {
     AlertTriangle,
     FileClock,
     ClipboardCheck,
-    BookOpen
+    BookOpen,
+    Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PageTransition from '../components/PageTransition';
@@ -35,6 +36,13 @@ import logoSier from '../assets/Logo1.png';
 import apiClient from '../api/axiosConfig';
 import { fetchSecureBlob } from '../utils/secureFetch';
 import { hasPermission } from '../utils/permissionHelpers';
+
+// Custom component to freeze the outlet during exit animations
+const AnimatedOutlet = () => {
+    const o = useOutlet();
+    const [outlet] = useState(o);
+    return outlet;
+};
 
 const AdminLayout = () => {
     // --- STATE UI ---
@@ -173,19 +181,7 @@ const AdminLayout = () => {
     useEffect(() => {
         fetchMyPermissions();
 
-        // Delay registering focus/visibility listeners to avoid double-fetch on mount
-        let listenersRegistered = false;
         const intervalId = setInterval(fetchMyPermissions, 180000); // 3 minutes
-        const handleFocus = () => fetchMyPermissions();
-        const handleVisibility = () => {
-            if (document.visibilityState === 'visible') fetchMyPermissions();
-        };
-
-        const listenerId = setTimeout(() => {
-            listenersRegistered = true;
-            window.addEventListener('focus', handleFocus);
-            document.addEventListener('visibilitychange', handleVisibility);
-        }, 2000);
 
         // Re-fetch immediately when permissions are changed (e.g. from UserPermission page)
         const handlePermUpdate = () => fetchMyPermissions();
@@ -193,12 +189,7 @@ const AdminLayout = () => {
 
         return () => {
             clearInterval(intervalId);
-            clearTimeout(listenerId);
             window.removeEventListener('permissions-updated', handlePermUpdate);
-            if (listenersRegistered) {
-                window.removeEventListener('focus', handleFocus);
-                document.removeEventListener('visibilitychange', handleVisibility);
-            }
         };
     }, [fetchMyPermissions]);
 
@@ -245,8 +236,10 @@ const AdminLayout = () => {
     const canViewWorkingSchedule = can('view_working_schedule');
     const canViewEvaluationTemplate = can('view_evaluation_component');
 
+    const canViewLogbookTags = can('view_logbook_tags');
+
     const showAttendanceMenu = canViewPermission || canViewCorrections || canViewLogs;
-    const showMasterDataMenu = canViewUserRole || canViewUserPermission || canViewInternProfiles || canViewInternMapping || canViewOfficeLocations || canViewWorkingSchedule || canViewEvaluationTemplate;
+    const showMasterDataMenu = canViewUserRole || canViewUserPermission || canViewInternProfiles || canViewInternMapping || canViewOfficeLocations || canViewWorkingSchedule || canViewEvaluationTemplate || canViewLogbookTags;
 
     const getFirstAllowedPath = () => {
         const ordered = [
@@ -265,6 +258,7 @@ const AdminLayout = () => {
             { allowed: canViewOfficeLocations, path: '/admin/masterdata/officeLocation' },
             { allowed: canViewWorkingSchedule, path: '/admin/masterdata/workingSchedule' },
             { allowed: canViewEvaluationTemplate, path: '/admin/masterdata/evaluation' },
+            { allowed: canViewLogbookTags, path: '/admin/masterdata/tags' },
             { allowed: canViewProfile, path: '/admin/profile' }
         ];
 
@@ -293,6 +287,7 @@ const AdminLayout = () => {
             { path: '/admin/masterdata/officeLocation', allowed: canViewOfficeLocations },
             { path: '/admin/masterdata/workingSchedule', allowed: canViewWorkingSchedule },
             { path: '/admin/masterdata/evaluation', allowed: canViewEvaluationTemplate },
+            { path: '/admin/masterdata/tags', allowed: canViewLogbookTags },
             { path: '/admin/profile', allowed: canViewProfile }
         ];
 
@@ -372,6 +367,7 @@ const AdminLayout = () => {
         if (path.includes('intern-mapping') || path.includes('internmapping')) return { category: 'Master Data', title: 'Intern Mapping' };
         if (path.includes('office')) return { category: 'Master Data', title: 'Office Locations' };
         if (path.includes('schedule')) return { category: 'Master Data', title: 'Working Schedule' };
+        if (path.includes('/admin/masterdata/tags')) return { category: 'Master Data', title: 'Logbook Tags' };
 
         if (path.includes('/admin/profile')) return { category: null, title: 'Profile' };
 
@@ -559,7 +555,7 @@ const AdminLayout = () => {
                                 {expandedMenus.masterData ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                             </div>
 
-                            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedMenus.masterData ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedMenus.masterData ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
                                 <div className="ml-6 pl-4 border-l border-white/20 space-y-1 mt-1 mb-3">
                                     {canViewUserRole && (
                                         <Link to="/admin/masterdata/userRole" onClick={() => setIsSidebarOpen(false)}>
@@ -607,6 +603,13 @@ const AdminLayout = () => {
                                         <Link to="/admin/masterdata/evaluation" onClick={() => setIsSidebarOpen(false)}>
                                             <div className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 ${isActive('/admin/masterdata/evaluation') ? 'bg-[#27345A] font-bold shadow-sm' : 'text-slate-50 hover:bg-white/10 hover:text-white'}`}>
                                                 <BookOpen size={18} /> <span>Evaluation Component</span>
+                                            </div>
+                                        </Link>
+                                    )}
+                                    {canViewLogbookTags && (
+                                        <Link to="/admin/masterdata/tags" onClick={() => setIsSidebarOpen(false)}>
+                                            <div className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 ${isActive('/admin/masterdata/tags') ? 'bg-[#27345A] font-bold shadow-sm' : 'text-slate-50 hover:bg-white/10 hover:text-white'}`}>
+                                                <Tag size={18} /> <span>Logbook Tags</span>
                                             </div>
                                         </Link>
                                     )}
@@ -750,7 +753,7 @@ const AdminLayout = () => {
                 <main className="flex-1 overflow-x-hidden overflow-y-auto p-6 md:p-8 bg-[#F8FAFC] admin-font">
                     <AnimatePresence mode="wait">
                         <PageTransition key={location.pathname}>
-                            <Outlet />
+                            <AnimatedOutlet />
                         </PageTransition>
                     </AnimatePresence>
                 </main>

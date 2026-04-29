@@ -112,6 +112,14 @@ class ForgotPasswordController extends Controller
             ], 404);
         }
 
+        // Cek agar password baru tidak sama dengan password saat ini
+        if (Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Password baru tidak boleh sama dengan password lama.'
+            ], 400);
+        }
+
         $user->password = Hash::make($request->password);
         $user->must_change_password = false;
         $user->save();
@@ -150,6 +158,14 @@ class ForgotPasswordController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Current password salah.'
+            ], 400);
+        }
+
+        // Cek agar password baru tidak sama dengan password saat ini
+        if (Hash::check($request->new_password, $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Password baru tidak boleh sama dengan password lama.'
             ], 400);
         }
 

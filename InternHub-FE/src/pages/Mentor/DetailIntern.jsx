@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
+import JSZip from "jszip";
 import apiClient from "../../api/axiosConfig";
 import { useParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
@@ -49,6 +50,78 @@ const DefaultIcon = L.icon({
   shadowSize: [41, 41],
 });
 L.Marker.prototype.options.icon = DefaultIcon;
+
+const CustomDropdown = ({ value, onChange, options, placeholder = "Select an option", label, compact = false }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  
+  const selectedOption = options.find(opt => String(opt.id) === String(value));
+  
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={dropdownRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full rounded-xl border border-slate-200 text-sm text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#354C8F]/20 cursor-pointer transition-all text-left flex justify-between items-center ${compact ? 'px-3 py-2' : 'px-4 py-3'}`}
+      >
+        <span className="flex items-center gap-2">
+          {selectedOption && selectedOption.color && (
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedOption.color }}></div>
+          )}
+          <span className={selectedOption ? "text-slate-700 font-semibold" : "text-slate-400"}>
+            {selectedOption ? selectedOption.name : placeholder}
+          </span>
+        </span>
+        <svg className={`w-4 h-4 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""} ${compact ? 'ml-2' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          className={`absolute ${compact ? 'bottom-full mb-1' : 'top-full mt-2'} left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto min-w-max`}
+        >
+          {options.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-slate-500 text-center">No options available</div>
+          ) : (
+            options.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  onChange(String(option.id));
+                  setIsOpen(false);
+                }}
+                className={`w-full px-4 py-2.5 text-left text-sm hover:bg-slate-100 transition-colors flex items-center justify-between ${
+                  String(option.id) === String(value) ? "bg-[#354C8F]/10 text-[#354C8F] font-semibold" : "text-slate-700"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  {option.color && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: option.color }}></div>}
+                  {option.name}
+                </span>
+                {String(option.id) === String(value) && <Check size={16} />}
+              </button>
+            ))
+          )}
+        </motion.div>
+      )}
+    </div>
+  );
+};
 
 // --- SMALL HELPERS / COMPONENTS ---
 const formatTimestamp = (value) => {
@@ -685,9 +758,17 @@ const DetailIntern = () => {
   const [statusType, setStatusType] = useState('success');
   const [statusMessage, setStatusMessage] = useState({ title: "", desc: "" });
   const [actionLoading, setActionLoading] = useState(false);
+  const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false);
+  const [bulkConfirmType, setBulkConfirmType] = useState(null); // 'approve' | 'download'
 
   const [selectedLogbookIds, setSelectedLogbookIds] = useState([]);
   const [bulkApproveLoading, setBulkApproveLoading] = useState(false);
+  const [activeLogbookTab, setActiveLogbookTab] = useState('needs-approval');
+  const [archiveCategoryFilter, setArchiveCategoryFilter] = useState('all');
+  const [modalArchiveCategory, setModalArchiveCategory] = useState('all');
+  const [taskCategoryOptions, setTaskCategoryOptions] = useState([]);
+  const [selectedArchiveRowIds, setSelectedArchiveRowIds] = useState([]);
+  const [archiveDownloadLoading, setArchiveDownloadLoading] = useState(false);
   const [isAttendanceSummaryOpen, setIsAttendanceSummaryOpen] = useState(false);
   const now = new Date();
   const defaultAttendanceMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -705,14 +786,64 @@ const DetailIntern = () => {
   const [attendanceDetailPage, setAttendanceDetailPage] = useState(1);
   const [attendanceDetailPagination, setAttendanceDetailPagination] = useState(null);
   const [attendanceDetailPerPage, setAttendanceDetailPerPage] = useState(10);
+
+  const TAB_STATUS_FILTERS = {
+    'needs-approval': ['pending', 'revision_needed', 'not_yet'],
+    archive: ['verified'],
+  };
   
   // Ref used to skip the next effect-triggered fetch when we already triggered a manual fetch
   const skipNextFetchRef = useRef(false);
   
-  const handleOpenDetail = (log) => { 
-    setSelectedLogDetail(log); 
-    setFeedbackInput(log.feedback || ""); 
-    setIsLogDetailOpen(true); 
+  const handleOpenDetail = async (log) => {
+    const initialEvidence = normalizeEvidenceFiles([
+      log?.evidenceFiles,
+      log?.logbookRaw?.bukti_kegiatan,
+      log?.logbookRaw?.output,
+      log?.logbookRaw?.outputs,
+      log?.logbookRaw?.files,
+      log?.logbookRaw?.attachments,
+    ]);
+
+    setSelectedLogDetail({
+      ...log,
+      evidenceFiles: initialEvidence,
+    });
+    setFeedbackInput(log.feedback || "");
+    setIsLogDetailOpen(true);
+
+    if (!log?.logbookId) return;
+
+    try {
+      const res = await apiClient.get(`/logbook/${log.logbookId}`);
+      const detail = res?.data?.data ?? res?.data ?? null;
+      if (!detail) return;
+
+      const evidenceFiles = normalizeEvidenceFiles([
+        detail?.bukti_kegiatan,
+        detail?.output,
+        detail?.outputs,
+        detail?.evidence_files,
+        detail?.files,
+        detail?.attachments,
+        detail?.logbook?.bukti_kegiatan,
+      ]);
+      const taskCategory = detail?.tag?.nama || detail?.task_category || detail?.kategori_task || log?.taskCategory || '-';
+
+      setSelectedLogDetail((prev) => ({
+        ...(prev || {}),
+        logbookId: detail?.id_logbooks || detail?.logbook_id || detail?.id || prev?.logbookId || log?.logbookId,
+        taskCategory,
+        evidenceFiles: evidenceFiles.length > 0 ? evidenceFiles : (prev?.evidenceFiles || []),
+        feedback: detail?.feedback || prev?.feedback || '',
+        created_at: detail?.created_at || prev?.created_at || null,
+        submitted_at: detail?.submitted_at || prev?.submitted_at || null,
+        verified_at: detail?.verified_at || prev?.verified_at || null,
+        revision_at: detail?.revision_at || prev?.revision_at || null,
+      }));
+    } catch (err) {
+      console.warn('Failed to fetch latest logbook detail:', err);
+    }
   };
   
   const handleCloseDetail = () => { 
@@ -748,7 +879,8 @@ const DetailIntern = () => {
       setShowConfirmModal(false);
       setIsLogDetailOpen(false);
       setShowStatusModal(true);
-      await fetchDailySummary(currentPage);
+      const effectiveStatuses = getEffectiveStatusFilters(appliedStatus, activeLogbookTab);
+      await fetchDailySummary(currentPage, effectiveStatuses);
       await fetchLogbookChart();
     } catch (err) {
       console.error('Error verifying logbook:', err);
@@ -764,9 +896,32 @@ const DetailIntern = () => {
     }
   };
 
-  const isSelectableLogbook = (item) => Boolean(item.logbookId) && item.status === 'Pending';
-  const selectableLogbookIdsOnPage = logs.filter(isSelectableLogbook).map(item => item.logbookId);
+  const isApprovedRow = (item) => {
+    const raw = String(item?.rawStatus || '').toLowerCase().trim();
+    const label = String(item?.status || '').toLowerCase().trim();
+    return raw === 'verified' || raw === 'approved' || label.includes('approved') || label.includes('verified');
+  };
+
+  const needsApprovalRows = (logs || []).filter((item) => !isApprovedRow(item));
+  const archiveRows = (logs || []).filter((item) => Boolean(item?.logbookId) && isApprovedRow(item));
+
+  const archiveCategoryOptions = taskCategoryOptions.length > 0
+    ? taskCategoryOptions
+    : Array.from(new Set(archiveRows.map((item) => item?.taskCategory || 'Uncategorized')));
+  const archiveRowsFiltered = archiveRows.filter((item) => {
+    if (archiveCategoryFilter === 'all') return true;
+    return (item?.taskCategory || 'Uncategorized') === archiveCategoryFilter;
+  });
+
+  const displayedRows = activeLogbookTab === 'needs-approval' ? needsApprovalRows : archiveRowsFiltered;
+
+  const isSelectableLogbook = (item) => Boolean(item.logbookId) && String(item?.status || '').toLowerCase() === 'pending';
+  const selectableLogbookIdsOnPage = needsApprovalRows.filter(isSelectableLogbook).map(item => item.logbookId);
+  const selectableArchiveIdsOnPage = archiveRowsFiltered
+    .filter((item) => item?.logbookId && Array.isArray(item?.evidenceFiles) && item.evidenceFiles.length > 0)
+    .map((item) => item.logbookId);
   const isAllLogbooksSelected = selectableLogbookIdsOnPage.length > 0 && selectableLogbookIdsOnPage.every(id => selectedLogbookIds.includes(id));
+  const isAllArchiveSelected = selectableArchiveIdsOnPage.length > 0 && selectableArchiveIdsOnPage.every(id => selectedArchiveRowIds.includes(id));
 
   const toggleLogbookSelect = (id) => {
     setSelectedLogbookIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -781,12 +936,32 @@ const DetailIntern = () => {
     });
   };
 
+  const toggleArchiveSelect = (id) => {
+    setSelectedArchiveRowIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAllArchiveOnPage = () => {
+    if (selectableArchiveIdsOnPage.length === 0) return;
+    setSelectedArchiveRowIds((prev) => {
+      const allSelected = selectableArchiveIdsOnPage.every((id) => prev.includes(id));
+      if (allSelected) return prev.filter((id) => !selectableArchiveIdsOnPage.includes(id));
+      return Array.from(new Set([...prev, ...selectableArchiveIdsOnPage]));
+    });
+  };
+
   useEffect(() => {
-    setSelectedLogbookIds(prev => prev.filter(id => logs.some(l => l.logbookId === id && isSelectableLogbook(l))));
-  }, [logs]);
+    setSelectedLogbookIds(prev => prev.filter(id => needsApprovalRows.some(l => l.logbookId === id && isSelectableLogbook(l))));
+    setSelectedArchiveRowIds(prev => prev.filter(id => archiveRows.some(l => l.logbookId === id)));
+  }, [logs, activeLogbookTab, archiveCategoryFilter]);
+
+  const handleOpenBulkApproveConfirm = () => {
+    if (selectedLogbookIds.length === 0 || bulkApproveLoading) return;
+    setBulkConfirmType('approve');
+    setShowBulkConfirmModal(true);
+  };
 
   const handleBulkApproveSelected = async () => {
-    const idsToApprove = selectedLogbookIds.filter(id => logs.some(l => l.logbookId === id && isSelectableLogbook(l)));
+    const idsToApprove = selectedLogbookIds.filter(id => needsApprovalRows.some(l => l.logbookId === id && isSelectableLogbook(l)));
     if (idsToApprove.length === 0) return;
     setBulkApproveLoading(true);
     try {
@@ -819,11 +994,140 @@ const DetailIntern = () => {
 
       setShowStatusModal(true);
       setSelectedLogbookIds([]);
-      await fetchDailySummary(currentPage);
+      const effectiveStatuses = getEffectiveStatusFilters(appliedStatus, activeLogbookTab);
+      await fetchDailySummary(currentPage, effectiveStatuses);
       await fetchLogbookChart();
     } finally {
       setBulkApproveLoading(false);
     }
+  };
+
+  const sanitizeFileName = (name) => String(name || 'file').replace(/[\\/:*?"<>|]+/g, '_');
+
+  const buildEvidenceRequestUrl = (logbookId, fileUrl) => {
+    if (!fileUrl) return null;
+    const source = String(fileUrl).trim();
+    if (!source) return null;
+    if (source.startsWith('http://') || source.startsWith('https://')) return source;
+    if (source.startsWith('/api/logbook/')) return source;
+    if (source.startsWith('/logbook/')) return source;
+
+    const normalized = source.split('?')[0];
+    const fileName = normalized.split('/').pop();
+    if (!fileName || !logbookId) return null;
+    return `/logbook/${logbookId}/file/${encodeURIComponent(fileName)}`;
+  };
+
+  const handleOpenBulkDownloadConfirm = () => {
+    if (selectedArchiveRowIds.length === 0 || archiveDownloadLoading) return;
+    setBulkConfirmType('download');
+    setShowBulkConfirmModal(true);
+  };
+
+  const handleBulkDownloadArchiveEvidence = async () => {
+    const targetRows = archiveRowsFiltered.filter((row) => selectedArchiveRowIds.includes(row.logbookId));
+    if (targetRows.length === 0) return;
+
+    setArchiveDownloadLoading(true);
+    try {
+      const zip = new JSZip();
+      let totalAdded = 0;
+      const usedFolderNames = new Set();
+
+      for (const row of targetRows) {
+        const files = Array.isArray(row?.evidenceFiles) ? row.evidenceFiles : [];
+        if (files.length === 0) continue;
+
+        const rawDate = String(row?.dateRaw || row?.date || '').trim();
+        const safeDate = rawDate
+          ? rawDate.replace(/[^0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+          : '';
+        const baseFolderName = safeDate ? `logbook-${safeDate}` : `logbook-${row.logbookId}`;
+
+        let folderName = baseFolderName;
+        let folderSuffix = 2;
+        while (usedFolderNames.has(folderName)) {
+          folderName = `${baseFolderName}-${folderSuffix}`;
+          folderSuffix += 1;
+        }
+        usedFolderNames.add(folderName);
+
+        const rowFolder = zip.folder(folderName);
+        const usedNames = new Set();
+
+        for (let idx = 0; idx < files.length; idx += 1) {
+          const file = files[idx];
+          const rawValue = typeof file === 'string' ? file : file?.url || file?.path || '';
+          const requestUrl = buildEvidenceRequestUrl(row.logbookId, rawValue);
+          if (!requestUrl) continue;
+
+          const defaultName = String(rawValue).split('?')[0].split('/').pop() || `evidence-${idx + 1}`;
+          let fileName = sanitizeFileName(defaultName) || `evidence-${idx + 1}`;
+          while (usedNames.has(fileName)) {
+            fileName = `${Date.now()}-${fileName}`;
+          }
+          usedNames.add(fileName);
+
+          const response = await apiClient.get(requestUrl, { responseType: 'blob' });
+          rowFolder.file(fileName, response.data);
+          totalAdded += 1;
+        }
+      }
+
+      if (totalAdded === 0) {
+        setStatusType('error');
+        setStatusMessage({
+          title: 'No Files',
+          desc: 'No evidence files found from selected archive rows.'
+        });
+        setShowStatusModal(true);
+        return;
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const zipName = `archive-evidence-${params?.id || 'intern'}-${new Date().toISOString().slice(0, 10)}.zip`;
+      const blobUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = zipName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+
+      setStatusType('success');
+      setStatusMessage({
+        title: 'Downloaded',
+        desc: `ZIP downloaded with ${totalAdded} file${totalAdded > 1 ? 's' : ''}.`
+      });
+      setShowStatusModal(true);
+    } catch (err) {
+      console.error('Bulk archive ZIP download failed:', err);
+      setStatusType('error');
+      setStatusMessage({
+        title: 'Download Failed',
+        desc: 'Failed to create ZIP from selected evidence files.'
+      });
+      setShowStatusModal(true);
+    } finally {
+      setArchiveDownloadLoading(false);
+    }
+  };
+
+  const executeBulkConfirmedAction = async () => {
+    if (bulkConfirmType === 'approve') {
+      setShowBulkConfirmModal(false);
+      await handleBulkApproveSelected();
+      return;
+    }
+
+    if (bulkConfirmType === 'download') {
+      setShowBulkConfirmModal(false);
+      await handleBulkDownloadArchiveEvidence();
+      return;
+    }
+
+    setShowBulkConfirmModal(false);
   };
 
   // Attendance detail modal state
@@ -944,6 +1248,101 @@ const DetailIntern = () => {
     return Array.from(new Set(mapped));
   };
 
+  const getEffectiveStatusFilters = (statuses = [], tab = activeLogbookTab) => {
+    const tabStatuses = TAB_STATUS_FILTERS[tab] || [];
+    const mapped = mapStatusForLogbookApi(Array.isArray(statuses) ? statuses : []);
+    if (mapped.length === 0) return tabStatuses;
+    const intersected = mapped.filter((status) => tabStatuses.includes(status));
+    return intersected.length > 0 ? intersected : tabStatuses;
+  };
+
+  const normalizeEvidenceFiles = (rawValue) => {
+    if (!rawValue) return [];
+
+    const toFileValue = (entry) => {
+      if (!entry) return null;
+      if (typeof entry === 'string') return entry.trim();
+      if (typeof entry === 'object') {
+        if (Array.isArray(entry)) {
+          return entry.map((it) => toFileValue(it)).filter(Boolean);
+        }
+        if (Array.isArray(entry.files)) {
+          return entry.files.map((it) => toFileValue(it)).filter(Boolean);
+        }
+        if (Array.isArray(entry.attachments)) {
+          return entry.attachments.map((it) => toFileValue(it)).filter(Boolean);
+        }
+        return (
+          entry.url ||
+          entry.path ||
+          entry.file_url ||
+          entry.fileUrl ||
+          entry.file ||
+          entry.name ||
+          entry.original_name ||
+          entry.originalName ||
+          entry.filename ||
+          entry.file_name ||
+          entry.nama_file ||
+          entry.bukti_kegiatan ||
+          null
+        );
+      }
+      return null;
+    };
+
+    if (Array.isArray(rawValue)) {
+      return [...new Set(rawValue.flatMap((item) => {
+        const parsed = toFileValue(item);
+        return Array.isArray(parsed) ? parsed : [parsed];
+      }).filter(Boolean)
+        .map((v) => String(v).trim())
+        .filter((v) => Boolean(v) && v.toLowerCase() !== 'null' && v.toLowerCase() !== 'undefined'))];
+    }
+
+    const text = String(rawValue).trim();
+    if (!text) return [];
+
+    if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
+      try {
+        const parsed = JSON.parse(text);
+        return normalizeEvidenceFiles(parsed);
+      } catch (e) {
+        // fallback to CSV/single value parsing
+      }
+    }
+
+    if (text.includes(',')) {
+      return [...new Set(text
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v) => Boolean(v) && v.toLowerCase() !== 'null' && v.toLowerCase() !== 'undefined'))];
+    }
+
+    const normalizedText = text.trim();
+    if (!normalizedText || normalizedText.toLowerCase() === 'null' || normalizedText.toLowerCase() === 'undefined') return [];
+    return [normalizedText];
+  };
+
+  const getTaskCategoryName = (logbook = {}) => {
+    return logbook?.tag?.nama || logbook?.tag_name || logbook?.task_category || logbook?.kategori_task || 'Uncategorized';
+  };
+
+  const fetchTaskCategoryOptions = async () => {
+    try {
+      const res = await apiClient.get('/tags', { params: { per_page: 1000 } });
+      const payload = res?.data?.data;
+      const rows = Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload) ? payload : []);
+      const options = rows
+        .map((row) => String(row?.nama || '').trim())
+        .filter(Boolean);
+      setTaskCategoryOptions(Array.from(new Set(options)));
+    } catch (err) {
+      console.warn('Failed to fetch task categories from master data:', err);
+      setTaskCategoryOptions([]);
+    }
+  };
+
   // Format work hours from HH:MM to hours and minutes object
   const formatWorkHours = (timeStr) => {
     if (!timeStr) return { hours: 0, minutes: 0 };
@@ -963,10 +1362,13 @@ const DetailIntern = () => {
     setLoading(true);
     try {
       const paramsObj = { page, per_page: itemsPerPage };
-      const q = query !== undefined ? query : searchQuery;
-      if (q) paramsObj.q = q;
+      const q = String(query !== undefined ? query : searchQuery || '').trim();
+      if (q) {
+        paramsObj.q = q;
+        paramsObj.search = q;
+      }
       if (statusFilters && statusFilters.length > 0) {
-        const mapped = mapStatusForLogbookApi(statusFilters);
+        const mapped = Array.from(new Set(statusFilters.map((s) => String(s).toLowerCase()).filter(Boolean)));
         if (mapped.length > 0) paramsObj.status_verifikasi = mapped.join(',');
       }
       // Add date range parameters
@@ -1003,6 +1405,7 @@ const DetailIntern = () => {
         // Extract attendance data from attendance object
         const attendance = item.attendance || {};
         const logbook = item.logbooks || {};
+        const taskCategory = getTaskCategoryName(logbook);
         const startTime = attendance.jam_masuk || '-';
         const endTime = attendance.jam_pulang || '-';
         
@@ -1042,6 +1445,17 @@ const DetailIntern = () => {
           else logbookStatus = logbook.status_verifikasi;
         }
         const clockInWithMinutesLate = startTime !== '-' && attendance.minutes_late > 0 ? `${startTime} (+${attendance.minutes_late}m late)` : startTime;
+        const evidenceFromLogbook = normalizeEvidenceFiles([
+          logbook.bukti_kegiatan,
+          logbook.output,
+          logbook.outputs,
+          logbook.files,
+          logbook.attachments,
+        ]);
+        const evidenceFromAttendance = normalizeEvidenceFiles([
+          attendance.foto_masuk,
+          attendance.foto_pulang,
+        ]);
 
         return {
           id: logbook.logbooks_id || `${item.tanggal}-${startTime}`,
@@ -1055,13 +1469,14 @@ const DetailIntern = () => {
           isNotYet: item.is_not_yet || false,
           date: item.tanggal ? new Date(item.tanggal).toLocaleDateString('en-GB') : "-",
           dateRaw: item.tanggal,
+          taskCategory,
           desc: logbook.deskripsi_kegiatan || `Attendance - ${item.status}` || "-",
           duration: duration,
           clockInTime: clockInWithMinutesLate,
           clockOutTime: endTime,
           status: logbookStatus !== '-' ? logbookStatus : (item.status === 'ontime' ? 'Approved' : item.status === 'late' ? 'Pending' : item.status),
           // EVIDENCE FILES MAPPING
-          evidenceFiles: (logbook && Array.isArray(logbook.bukti_kegiatan) && logbook.bukti_kegiatan.length > 0) ? logbook.bukti_kegiatan : (attendance.foto_masuk ? [attendance.foto_masuk] : (attendance.foto_pulang ? [attendance.foto_pulang] : [])),
+          evidenceFiles: evidenceFromLogbook.length > 0 ? evidenceFromLogbook : evidenceFromAttendance,
           feedback: logbook.feedback || "",
           submittedAt: logbook.submitted_at || logbook.created_at,
           updatedAt: logbook.updated_at,
@@ -1117,8 +1532,9 @@ const DetailIntern = () => {
       skipNextFetchRef.current = false;
       return;
     }
-    fetchDailySummary(currentPage, appliedStatus, undefined, appliedStartDate, appliedEndDate);
-  }, [params?.id, currentPage, searchQuery, itemsPerPage, appliedStatus, appliedStartDate, appliedEndDate]);
+    const effectiveStatuses = getEffectiveStatusFilters(appliedStatus, activeLogbookTab);
+    fetchDailySummary(currentPage, effectiveStatuses, undefined, appliedStartDate, appliedEndDate);
+  }, [params?.id, currentPage, searchQuery, itemsPerPage, appliedStatus, appliedStartDate, appliedEndDate, activeLogbookTab]);
 
   useEffect(() => {
     const buildMonthKeys = () => {
@@ -1165,8 +1581,16 @@ const DetailIntern = () => {
   useEffect(() => {
     // fetch logbook chart when intern id changes
     fetchLogbookChart();
+    fetchTaskCategoryOptions();
     // Profile & attendance are included in GET /mentor/interns/:id (handled by the main fetch below)
   }, [params?.id]);
+
+  useEffect(() => {
+    if (archiveCategoryFilter === 'all') return;
+    if (!archiveCategoryOptions.includes(archiveCategoryFilter)) {
+      setArchiveCategoryFilter('all');
+    }
+  }, [archiveCategoryFilter, archiveCategoryOptions]);
 
   // Fetch attendance detail when attendance summary is opened
   useEffect(() => {
@@ -1278,6 +1702,7 @@ const DetailIntern = () => {
   useEffect(() => {
     if (isFilterOpen) {
       setModalStatus(Array.isArray(appliedStatus) ? appliedStatus : []);
+      setModalArchiveCategory(archiveCategoryFilter || 'all');
       setModalStartDate(appliedStartDate || "");
       setModalEndDate(appliedEndDate || "");
     }
@@ -1291,6 +1716,8 @@ const DetailIntern = () => {
     setModalEndDate("");
     setAppliedStartDate("");
     setAppliedEndDate("");
+    setModalArchiveCategory('all');
+    setArchiveCategoryFilter('all');
     setIsFilterOpen(false);
     setSearchInput("");
     setSearchQuery("");
@@ -1299,25 +1726,31 @@ const DetailIntern = () => {
 
     // Prevent the effect from double-fetching — mark skip and manually fetch once
     skipNextFetchRef.current = true;
-    fetchDailySummary(1, [], undefined, "", "");
+    const effectiveStatuses = getEffectiveStatusFilters([], activeLogbookTab);
+    fetchDailySummary(1, effectiveStatuses, undefined, "", "");
   };
   const applyModalFilters = () => {
     // Persist applied filters, close modal and reset to first page.
     // Trigger a single fetch immediately and skip the effect's fetch to avoid double requests.
-    setAppliedStatus(modalStatus);
+    const nextModalStatus = activeLogbookTab === 'archive' ? [] : modalStatus;
+    setAppliedStatus(nextModalStatus);
+    if (activeLogbookTab === 'archive') {
+      setArchiveCategoryFilter(modalArchiveCategory || 'all');
+      setSelectedArchiveRowIds([]);
+    }
     setAppliedStartDate(modalStartDate);
     setAppliedEndDate(modalEndDate);
     setIsFilterOpen(false);
     setCurrentPage(1);
 
     skipNextFetchRef.current = true;
-    fetchDailySummary(1, modalStatus, undefined, modalStartDate, modalEndDate);
+    const effectiveStatuses = getEffectiveStatusFilters(nextModalStatus, activeLogbookTab);
+    fetchDailySummary(1, effectiveStatuses, undefined, modalStartDate, modalEndDate);
   };
 
   const handleViewFile = (logbookId, fileUrl, displayName) => {
-    // If fileUrl is already a full URL from API, use it directly
-    const isFullUrl = fileUrl && (fileUrl.startsWith('http://') || fileUrl.startsWith('https://'));
-    const urlToUse = isFullUrl ? fileUrl : `/logbook/${logbookId}/file/${encodeURIComponent(String(fileUrl).split('/').pop())}`;
+    const urlToUse = buildEvidenceRequestUrl(logbookId, fileUrl);
+    if (!urlToUse) return;
     const rawName = String(fileUrl).split('/').pop();
     const viewerUrl = `/mentor/file-viewer?url=${encodeURIComponent(urlToUse)}&name=${encodeURIComponent(displayName || rawName)}`;
     window.open(viewerUrl, '_blank');
@@ -1327,10 +1760,12 @@ const DetailIntern = () => {
     try {
       const rawName = String(fileUrl).split('/').pop();
       const downloadName = displayName || rawName;
-      
+      const requestUrl = buildEvidenceRequestUrl(logbookId, fileUrl);
+      if (!requestUrl) return;
+
       // Always use apiClient to avoid CORS issues
       // apiClient will handle auth headers and CORS properly
-      const res = await apiClient.get(fileUrl, { responseType: 'blob' });
+      const res = await apiClient.get(requestUrl, { responseType: 'blob' });
       const blobUrl = URL.createObjectURL(res.data);
       const link = document.createElement('a');
       link.href = blobUrl;
@@ -1867,12 +2302,37 @@ const DetailIntern = () => {
 
         {/* Full width search + filter area */}
         <div className="lg:col-span-8 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveLogbookTab('needs-approval');
+                setCurrentPage(1);
+                setSelectedArchiveRowIds([]);
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-bold border transition ${activeLogbookTab === 'needs-approval' ? 'bg-[#354C8F] text-white border-[#354C8F]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+            >
+              Needs Approval
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveLogbookTab('archive');
+                setCurrentPage(1);
+                setSelectedLogbookIds([]);
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-bold border transition ${activeLogbookTab === 'archive' ? 'bg-[#354C8F] text-white border-[#354C8F]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+            >
+              Archive (Approved)
+            </button>
+          </div>
+
           <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
             <div className="flex flex-row gap-3 w-full md:w-auto">
               <div className="relative flex-1 md:w-80">
                 <input
                   type="text"
-                  placeholder="Search Intern"
+                  placeholder="Search Description"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { setSearchQuery(searchInput); setCurrentPage(1); } }}
@@ -1885,18 +2345,31 @@ const DetailIntern = () => {
               <button onClick={() => setIsFilterOpen(true)} className={`${btnPrimaryClass} !px-6`}>
                 <Filter size={18} />
                 <span className="hidden md:inline">Filter</span>
-                {appliedStatus && appliedStatus.length > 0 && (
+                {((activeLogbookTab === 'needs-approval' && appliedStatus && appliedStatus.length > 0) ||
+                  (activeLogbookTab === 'archive' && archiveCategoryFilter !== 'all') ||
+                  Boolean(appliedStartDate) ||
+                  Boolean(appliedEndDate)) && (
                   <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse ml-2"></div>
                 )}
               </button>
             </div>
-            <button
-              onClick={handleBulkApproveSelected}
-              disabled={selectedLogbookIds.length === 0 || bulkApproveLoading}
-              className={`${btnSuccessClass} w-full md:w-auto ${selectedLogbookIds.length === 0 ? 'opacity-50 cursor-not-allowed' : ''} ${bulkApproveLoading ? 'opacity-70 cursor-wait' : ''}`}
-            >
-              <Check size={16} /> {bulkApproveLoading ? `Approving... (${selectedLogbookIds.length})` : `Approve Selected (${selectedLogbookIds.length})`}
-            </button>
+            {activeLogbookTab === 'needs-approval' ? (
+              <button
+                onClick={handleOpenBulkApproveConfirm}
+                disabled={selectedLogbookIds.length === 0 || bulkApproveLoading}
+                className={`${btnSuccessClass} w-full md:w-auto ${selectedLogbookIds.length === 0 ? 'opacity-50 cursor-not-allowed' : ''} ${bulkApproveLoading ? 'opacity-70 cursor-wait' : ''}`}
+              >
+                <Check size={16} /> {bulkApproveLoading ? `Approving... (${selectedLogbookIds.length})` : `Approve Selected (${selectedLogbookIds.length})`}
+              </button>
+            ) : (
+              <button
+                onClick={handleOpenBulkDownloadConfirm}
+                disabled={selectedArchiveRowIds.length === 0 || archiveDownloadLoading}
+                className={`${btnPrimaryClass} w-full md:w-auto ${selectedArchiveRowIds.length === 0 ? 'opacity-50 cursor-not-allowed' : ''} ${archiveDownloadLoading ? 'opacity-70 cursor-wait' : ''}`}
+              >
+                <Download size={16} /> {archiveDownloadLoading ? `Downloading... (${selectedArchiveRowIds.length})` : `Bulk Download Evidence (${selectedArchiveRowIds.length})`}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1910,9 +2383,9 @@ const DetailIntern = () => {
                     <div className="flex items-center justify-center gap-2">
                       <input
                         type="checkbox"
-                        onChange={toggleSelectAllLogbooksOnPage}
-                        checked={isAllLogbooksSelected}
-                        disabled={selectableLogbookIdsOnPage.length === 0}
+                        onChange={activeLogbookTab === 'needs-approval' ? toggleSelectAllLogbooksOnPage : toggleSelectAllArchiveOnPage}
+                        checked={activeLogbookTab === 'needs-approval' ? isAllLogbooksSelected : isAllArchiveSelected}
+                        disabled={activeLogbookTab === 'needs-approval' ? selectableLogbookIdsOnPage.length === 0 : selectableArchiveIdsOnPage.length === 0}
                         className="form-checkbox h-4 w-4"
                       />
                       <span>No</span>
@@ -1938,8 +2411,8 @@ const DetailIntern = () => {
                       <div>Loading...</div>
                     </td>
                   </tr>
-                ) : logs && logs.length > 0 ? (
-                  logs.map((r, i) => {
+                ) : displayedRows && displayedRows.length > 0 ? (
+                  displayedRows.map((r, i) => {
                     const attStatusLower = String(r.attendance_status || r.attendance_reason || '').toLowerCase();
                     const isExcusedRow = attStatusLower.includes('sick') || attStatusLower.includes('sakit') || attStatusLower.includes('leave') || attStatusLower.includes('izin') || attStatusLower.includes('on leave');
                     const statusLower = String(r.status || '').toLowerCase();
@@ -1956,6 +2429,14 @@ const DetailIntern = () => {
                                 type="checkbox"
                                 checked={selectedLogbookIds.includes(r.logbookId)}
                                 onChange={() => toggleLogbookSelect(r.logbookId)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="form-checkbox h-4 w-4"
+                              />
+                            ) : activeLogbookTab === 'archive' && r.logbookId && Array.isArray(r.evidenceFiles) && r.evidenceFiles.length > 0 ? (
+                              <input
+                                type="checkbox"
+                                checked={selectedArchiveRowIds.includes(r.logbookId)}
+                                onChange={() => toggleArchiveSelect(r.logbookId)}
                                 onClick={(e) => e.stopPropagation()}
                                 className="form-checkbox h-4 w-4"
                               />
@@ -2088,7 +2569,7 @@ const DetailIntern = () => {
           <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 md:gap-0">
 
             {/* Info Text */}
-            <div className="text-sm text-slate-500 text-center md:text-left order-2 md:order-1">
+              <div className="text-sm text-slate-500 text-center md:text-left order-2 md:order-1">
               Showing {showingFrom} to {showingTo} of {totalEntries} entries
             </div>
 
@@ -2097,18 +2578,18 @@ const DetailIntern = () => {
               {/* Per Page Selector */}
               <div className="flex items-center gap-2">
                 <label className="text-xs md:text-sm font-medium text-slate-600">Per page:</label>
-                <select
-                  value={itemsPerPage}
-                  onChange={(e) => {
-                    setItemsPerPage(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs md:text-sm font-medium text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#354C8F]/20 cursor-pointer transition-all"
-                >
-                  <option value={5}>5</option>
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                </select>
+                <div className="w-24">
+                  <CustomDropdown
+                    value={String(itemsPerPage)}
+                    onChange={(val) => {
+                      setItemsPerPage(Number(val));
+                      setCurrentPage(1);
+                    }}
+                    options={[{ id: "5", name: "5" }, { id: "10", name: "10" }, { id: "25", name: "25" }]}
+                    placeholder="Per page"
+                    compact={true}
+                  />
+                </div>
               </div>
 
               {/* Pagination Buttons */}
@@ -2227,6 +2708,13 @@ const DetailIntern = () => {
             
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-800 mb-2">Task Category</label>
+                <div className="p-4 bg-slate-50 rounded-xl text-sm text-slate-600 leading-relaxed border border-slate-100">
+                  {selectedLogDetail.taskCategory || '-'}
+                </div>
+              </div>
+
               {/* Description */}
               <div>
                 <label className="block text-sm font-bold text-slate-800 mb-2">Activity Description</label>
@@ -2247,9 +2735,12 @@ const DetailIntern = () => {
                 {selectedLogDetail.evidenceFiles && selectedLogDetail.evidenceFiles.length > 0 ? (
                   <div className="space-y-3">
                     {selectedLogDetail.evidenceFiles.map((file, idx) => {
-                      const rawName = typeof file === "string" ? file.split("/").pop() : (file?.url || file?.path || "").split("/").pop();
+                      const resolvedFileValue = typeof file === "string"
+                        ? file
+                        : (file?.url || file?.path || file?.file_url || file?.fileUrl || file?.file || file?.name || file?.original_name || file?.originalName || file?.filename || file?.file_name || file?.nama_file || "");
+                      const rawName = String(resolvedFileValue || '').split("?")[0].split("/").pop();
                       const cleanName = (rawName || `File ${idx + 1}`).replace(/^([\da-fA-F]+_){1,2}/, '');
-                      const ext = cleanName.split('.').pop().toLowerCase();
+                      const ext = (cleanName.split('.').pop() || '').toLowerCase();
                       const extLabel = ext.toUpperCase();
                       const isPdf = ext === 'pdf';
                       const isImage = ['png', 'jpg', 'jpeg'].includes(ext);
@@ -2259,13 +2750,13 @@ const DetailIntern = () => {
                         : isImage
                           ? 'bg-blue-500 text-white'
                           : 'bg-slate-300 text-slate-700';
-                      const fileUrl = typeof file === "string" ? file : file?.url || file?.path || "";
+                      const fileUrl = resolvedFileValue;
 
                       return (
                         <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl group hover:border-[#354C8F] hover:shadow-md transition-all">
                           <div
                             className="flex items-center gap-4 overflow-hidden cursor-pointer flex-1"
-                            onClick={() => handleViewFile(selectedLogDetail.id, fileUrl, cleanName)}
+                            onClick={() => handleViewFile(selectedLogDetail.logbookId || selectedLogDetail.id, fileUrl, cleanName)}
                           >
                             <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center shrink-0 border border-slate-200 shadow-sm">
                               <div className={`text-[10px] font-extrabold px-2 py-1 rounded ${badgeClasses}`}>
@@ -2282,7 +2773,7 @@ const DetailIntern = () => {
                             </div>
                           </div>
                           <button
-                            onClick={() => handleDownloadFile(selectedLogDetail.id, fileUrl, cleanName)}
+                            onClick={() => handleDownloadFile(selectedLogDetail.logbookId || selectedLogDetail.id, fileUrl, cleanName)}
                             className="p-2.5 text-slate-400 hover:text-[#354C8F] hover:bg-slate-50 rounded-lg transition-all"
                             title="Download"
                           >
@@ -2381,20 +2872,35 @@ const DetailIntern = () => {
               </button>
             </div>
             <div className="p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-bold mb-2">Status</label>
-                <div className="flex flex-wrap gap-2">
-                  {["Pending", "Approved", "Revision", "Not Yet"].map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => toggleModalStatus(s)}
-                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${modalStatus.includes(s) ? "bg-[#354C8F] text-white border-[#354C8F] shadow-md" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-                    >
-                      {s}
-                    </button>
-                  ))}
+              {activeLogbookTab === 'needs-approval' ? (
+                <div>
+                  <label className="block text-sm font-bold mb-2">Status</label>
+                  <div className="flex flex-wrap gap-2">
+                    {["Pending", "Revision", "Not Yet"].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => toggleModalStatus(s)}
+                        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${modalStatus.includes(s) ? "bg-[#354C8F] text-white border-[#354C8F] shadow-md" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-bold mb-2">Task Category</label>
+                  <CustomDropdown
+                    value={modalArchiveCategory}
+                    onChange={(val) => setModalArchiveCategory(val)}
+                    options={[
+                      { id: "all", name: "All Categories" },
+                      ...archiveCategoryOptions.map((cat) => ({ id: cat, name: cat }))
+                    ]}
+                    placeholder="Select Task Category"
+                  />
+                </div>
+              )}
 
               {/* Date Range Filter */}
               <div>
@@ -2456,6 +2962,49 @@ const DetailIntern = () => {
               <button onClick={applyModalFilters} className={btnPrimaryClass}>
                 Apply Filter
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Confirmation Modal */}
+      {showBulkConfirmModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 relative">
+            <div className="text-center">
+              <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${bulkConfirmType === 'approve' ? 'bg-green-50' : 'bg-blue-50'}`}>
+                {bulkConfirmType === 'approve' ? (
+                  <Check className="text-green-500" size={40} strokeWidth={3} />
+                ) : (
+                  <Download className="text-blue-500" size={40} strokeWidth={2.5} />
+                )}
+              </div>
+              <h3 className="text-[20px] font-bold text-[#27345A] mb-2">
+                {bulkConfirmType === 'approve' ? 'Approve Selected Logbooks?' : 'Download Selected Evidence?'}
+              </h3>
+              <p className="text-slate-500 text-sm mb-8">
+                {bulkConfirmType === 'approve'
+                  ? `Approve ${selectedLogbookIds.length} selected logbook${selectedLogbookIds.length > 1 ? 's' : ''}?`
+                  : `Create ZIP from ${selectedArchiveRowIds.length} selected archive row${selectedArchiveRowIds.length > 1 ? 's' : ''}?`}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowBulkConfirmModal(false)}
+                  disabled={bulkApproveLoading || archiveDownloadLoading}
+                  className={`${btnSecondaryClass} w-full justify-center`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeBulkConfirmedAction}
+                  disabled={bulkApproveLoading || archiveDownloadLoading}
+                  className={`${bulkConfirmType === 'approve' ? btnSuccessClass : btnPrimaryClass} w-full justify-center ${bulkApproveLoading || archiveDownloadLoading ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  {bulkConfirmType === 'approve'
+                    ? (bulkApproveLoading ? 'Approving...' : 'Approve')
+                    : (archiveDownloadLoading ? 'Preparing ZIP...' : 'Download')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

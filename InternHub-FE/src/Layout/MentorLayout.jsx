@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 import {
   LayoutDashboard,
   Clock,
@@ -36,6 +36,13 @@ import apiClient from '../api/axiosConfig';
 import { fetchSecureBlob } from '../utils/secureFetch';
 import { hasPermission } from '../utils/permissionHelpers';
 
+// Custom component to freeze the outlet during exit animations
+const AnimatedOutlet = () => {
+  const o = useOutlet();
+  const [outlet] = useState(o);
+  return outlet;
+};
+
 const MentorLayout = () => {
   // --- STATE UI ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -65,6 +72,7 @@ const MentorLayout = () => {
 
   const location = useLocation();
   const navigate = useNavigate();
+
 
   const roleBadgeClass = (role) => {
     const r = String(role || '').toLowerCase();
@@ -169,17 +177,7 @@ const MentorLayout = () => {
   useEffect(() => {
     fetchMyPermissions();
 
-    // Delay registering focus/visibility listeners to avoid double-fetch on mount
-    let listenersRegistered = false;
     const intervalId = setInterval(fetchMyPermissions, 180000); // 3 minutes
-    const handleFetchFocus = () => fetchMyPermissions();
-    const handleFetchVisibility = () => { if (document.visibilityState === 'visible') fetchMyPermissions(); };
-
-    const listenerId = setTimeout(() => {
-      listenersRegistered = true;
-      window.addEventListener('focus', handleFetchFocus);
-      document.addEventListener('visibilitychange', handleFetchVisibility);
-    }, 2000);
 
     // Re-fetch immediately when permissions are changed
     const handlePermUpdate = () => fetchMyPermissions();
@@ -187,12 +185,7 @@ const MentorLayout = () => {
 
     return () => {
       clearInterval(intervalId);
-      clearTimeout(listenerId);
       window.removeEventListener('permissions-updated', handlePermUpdate);
-      if (listenersRegistered) {
-        window.removeEventListener('focus', handleFetchFocus);
-        document.removeEventListener('visibilitychange', handleFetchVisibility);
-      }
     };
   }, [fetchMyPermissions]);
 
@@ -722,9 +715,11 @@ const MentorLayout = () => {
         </header>
 
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-6 md:p-8 bg-[#F8FAFC] mentor-font">
-          <PageTransition key={location.pathname}>
-            <Outlet />
-          </PageTransition>
+          <AnimatePresence mode="wait">
+            <PageTransition key={location.pathname}>
+              <AnimatedOutlet />
+            </PageTransition>
+          </AnimatePresence>
         </main>
       </div>
 

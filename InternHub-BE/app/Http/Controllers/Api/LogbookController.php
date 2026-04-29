@@ -12,6 +12,67 @@ use App\Notifications\GeneralNotification;
 class LogbookController extends Controller
 {
     /**
+     * Build mentor intern detail path using mahasiswa ID expected by FE route.
+     */
+    private function buildMentorInternDetailPath(User $user): string
+    {
+        $internId = $user->mahasiswa?->id_mahasiswa;
+
+        if (!$internId) {
+            $internId = \App\Models\TblMahasiswa::where('user_id', $user->user_id)->value('id_mahasiswa');
+        }
+
+        return $internId ? "/mentor/interns/{$internId}" : '/mentor/internMonitoring';
+    }
+
+    /**
+     * Extract uploaded evidence files from multipart request in a robust way.
+     * Supports keys: bukti_kegiatan, bukti_kegiatan[], and nested arrays.
+     */
+    private function extractEvidenceFiles(Request $request): array
+    {
+        $files = [];
+
+        $pushUploadedFiles = function ($value) use (&$files, &$pushUploadedFiles) {
+            if ($value instanceof \Illuminate\Http\UploadedFile) {
+                $files[] = $value;
+                return;
+            }
+
+            if (is_array($value)) {
+                foreach ($value as $nested) {
+                    $pushUploadedFiles($nested);
+                }
+            }
+        };
+
+        // Read from normalized and bracket keys to handle different clients.
+        $allFiles = $request->allFiles();
+        $pushUploadedFiles($allFiles['bukti_kegiatan'] ?? null);
+        $pushUploadedFiles($allFiles['bukti_kegiatan[]'] ?? null);
+
+        // Additional fallbacks for non-standard multipart parsers.
+        $pushUploadedFiles($request->file('bukti_kegiatan'));
+        $pushUploadedFiles($request->file('bukti_kegiatan.*'));
+        $pushUploadedFiles($request->file('bukti_kegiatan[]'));
+
+        // Deduplicate only exact same object references.
+        // This prevents dropping distinct files that coincidentally share similar metadata.
+        $unique = [];
+        $seenObjectIds = [];
+        foreach ($files as $file) {
+            $objectId = spl_object_id($file);
+            if (isset($seenObjectIds[$objectId])) {
+                continue;
+            }
+            $seenObjectIds[$objectId] = true;
+            $unique[] = $file;
+        }
+
+        return $unique;
+    }
+
+    /**
      * List logbooks untuk intern yang login
      */
     public function index(Request $request)
@@ -136,12 +197,12 @@ class LogbookController extends Controller
     public function store(Request $request)
     {
         $input = $request->all();
+        $uploadedFiles = $this->extractEvidenceFiles($request);
 
         // Robust file extraction: ensure we handle array of files
         // Fix: Explicitly merge files into input and force array structure for validation
-        if ($request->hasFile('bukti_kegiatan')) {
-            $files = $request->file('bukti_kegiatan');
-            $input['bukti_kegiatan'] = is_array($files) ? $files : [$files];
+        if (!empty($uploadedFiles)) {
+            $input['bukti_kegiatan'] = $uploadedFiles;
         } else {
              unset($input['bukti_kegiatan']);
         }
@@ -155,6 +216,7 @@ class LogbookController extends Controller
             'bukti_kegiatan' => 'nullable', // Base field check
             'bukti_kegiatan.*' => 'file|mimes:jpg,jpeg,png,pdf|max:51200', // Max 10MB per file, specific check for array items
             'is_draft' => 'nullable|boolean',
+            'tag_id' => 'nullable|integer|exists:tags,id',
         ]);
 
         if ($validator->fails()) {
@@ -173,7 +235,7 @@ class LogbookController extends Controller
             if (in_array($existing->status_verifikasi, ['rejected', 'revision_needed', 'draft'])) {
                 // Handle File Upload for resubmit
                 $buktiPaths = [];
-                if ($request->hasFile('bukti_kegiatan')) {
+                if (!empty($uploadedFiles)) {
                     // Delete old files
                     $oldFiles = $existing->bukti_kegiatan;
                     if ($oldFiles && is_array($oldFiles)) {
@@ -182,12 +244,7 @@ class LogbookController extends Controller
                             \Illuminate\Support\Facades\Storage::disk('public')->delete($path);
                         }
                     }
-
-                    $files = $request->file('bukti_kegiatan');
-                    if (!is_array($files)) {
-                        $files = [$files];
-                    }
-                    foreach ($files as $file) {
+                    foreach ($uploadedFiles as $file) {
                         $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
                         $path = $file->storeAs('logbooks', $filename, 'public');
                         $buktiPaths[] = 'storage/' . $path;
@@ -199,6 +256,7 @@ class LogbookController extends Controller
                     'status_verifikasi' => $isDraft ? 'draft' : 'pending',
                     'feedback' => null, // Clear old feedback
                     'submitted_at' => $isDraft ? null : Carbon::now(),
+                    'tag_id' => $request->filled('tag_id') ? $request->tag_id : $existing->tag_id,
                 ];
 
                 if (!empty($buktiPaths)) {
@@ -212,12 +270,13 @@ class LogbookController extends Controller
                 if (!$isDraft) {
                     // Notifikasi ke Mentor (Logbook Diperbaiki)
                     $mentors = $user->mentors()->get();
+                    $targetPath = $this->buildMentorInternDetailPath($user);
                     foreach ($mentors as $mentor) {
                         if ($mentor) {
                             $mentor->notify(new GeneralNotification(
                                 'Revisi Logbook Dikirim',
                                 "Intern {$user->nama} telah memperbaiki dan mengirim ulang logbook tanggal " . Carbon::parse($request->tanggal)->format('d-m-Y') . ".",
-                                "/mentor/logbook",
+                                $targetPath,
                                 "info",
                                 "mentor"
                             ));
@@ -242,15 +301,8 @@ class LogbookController extends Controller
 
         // Handle File Upload
         $buktiPaths = [];
-        if ($request->hasFile('bukti_kegiatan')) {
-            $files = $request->file('bukti_kegiatan');
-            
-            // Normalize to array
-            if (!is_array($files)) {
-                $files = [$files];
-            }
-
-            foreach ($files as $file) {
+        if (!empty($uploadedFiles)) {
+            foreach ($uploadedFiles as $file) {
                  $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
                  // Store in storage/app/public/logbooks
                  $path = $file->storeAs('logbooks', $filename, 'public');
@@ -264,6 +316,7 @@ class LogbookController extends Controller
             'tanggal' => $request->tanggal,
             'deskripsi_kegiatan' => $request->deskripsi_kegiatan ?? '',
             'bukti_kegiatan' => $buktiPaths, // Model mutator handles JSON encoding
+            'tag_id' => $request->filled('tag_id') ? $request->tag_id : null,
             'status_verifikasi' => $isDraft ? 'draft' : 'pending',
             'submitted_at' => $isDraft ? null : Carbon::now(), // Set submission time jika submit (bukan draft)
         ]);
@@ -273,12 +326,13 @@ class LogbookController extends Controller
         if (!$isDraft) {
             // Notifikasi ke Mentor (Logbook Baru)
             $mentors = $user->mentors()->get();
+            $targetPath = $this->buildMentorInternDetailPath($user);
             foreach ($mentors as $mentor) {
                 if ($mentor) {
                     $mentor->notify(new GeneralNotification(
                         'Logbook Baru',
                         "Intern {$user->nama} telah mensubmit logbook untuk tanggal " . Carbon::parse($request->tanggal)->format('d-m-Y') . ".",
-                        "/mentor/logbook",
+                        $targetPath,
                         "info",
                         "mentor"
                     ));
@@ -289,7 +343,7 @@ class LogbookController extends Controller
         return response()->json([
             'success' => true,
             'message' => $message,
-            'data' => $logbooks
+            'data' => $logbooks->load('tag')
         ], 201);
     }
 
@@ -298,7 +352,7 @@ class LogbookController extends Controller
      */
     public function show($id)
     {
-        $logbooks = Logbook::with(['user', 'verifier'])->find($id);
+        $logbooks = Logbook::with(['user', 'verifier', 'tag'])->find($id);
 
         if (!$logbooks) {
             return response()->json([
@@ -320,12 +374,12 @@ class LogbookController extends Controller
     public function update(Request $request, $id)
     {
         $input = $request->all();
+        $uploadedFiles = $this->extractEvidenceFiles($request);
 
         // Robust file extraction: ensure we handle array of files
         // Fix: Explicitly merge files into input and force array structure for validation
-        if ($request->hasFile('bukti_kegiatan')) {
-             $files = $request->file('bukti_kegiatan');
-             $input['bukti_kegiatan'] = is_array($files) ? $files : [$files];
+        if (!empty($uploadedFiles)) {
+             $input['bukti_kegiatan'] = $uploadedFiles;
         } else {
             unset($input['bukti_kegiatan']);
         }
@@ -337,6 +391,7 @@ class LogbookController extends Controller
             'bukti_kegiatan' => 'nullable',
             'bukti_kegiatan.*' => 'file|mimes:jpg,jpeg,png,pdf|max:51200', // Max 10MB
             'is_draft' => 'nullable|boolean',
+            'tag_id' => 'nullable|integer|exists:tags,id',
         ]);
 
         if ($validator->fails()) {
@@ -371,6 +426,7 @@ class LogbookController extends Controller
         $dataToUpdate = [
             'deskripsi_kegiatan' => $input['deskripsi_kegiatan'] ?? $logbooks->deskripsi_kegiatan,
             'status_verifikasi' => $newStatus,
+            'tag_id' => array_key_exists('tag_id', $input) ? ($input['tag_id'] ?: null) : $logbooks->tag_id,
         ];
 
         // Only clear feedback if submitting (not draft)
@@ -383,7 +439,7 @@ class LogbookController extends Controller
         // Handle File Replacement
         // NOTE: Currently we replace ALL files if new files are uploaded.
         // To support "append" or "delete specific", we need more complex logic on FE.
-        if ($request->hasFile('bukti_kegiatan')) {
+        if (!empty($uploadedFiles)) {
             // Delete old files
             $oldFiles = $logbooks->bukti_kegiatan; // Accessor ensures this is array
             if ($oldFiles && is_array($oldFiles)) {
@@ -398,15 +454,9 @@ class LogbookController extends Controller
                          \Illuminate\Support\Facades\Storage::delete(str_replace('storage/', 'public/', $oldFiles));
                     }
             }
-
             // Upload new files
-            $files = $request->file('bukti_kegiatan');
-            if (!is_array($files)) {
-                $files = [$files];
-            }
-            
             $newPaths = [];
-            foreach ($files as $file) {
+            foreach ($uploadedFiles as $file) {
                  $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
                  $path = $file->storeAs('logbooks', $filename, 'public');
                  $newPaths[] = 'storage/' . $path;
@@ -421,12 +471,13 @@ class LogbookController extends Controller
         if (!$isDraft && $newStatus === 'pending') {
             // Notifikasi ke Mentor (Logbook Diajukan/Diubah)
             $mentors = $user->mentors()->get();
+            $targetPath = $this->buildMentorInternDetailPath($user);
             foreach ($mentors as $mentor) {
                 if ($mentor) {
                     $mentor->notify(new GeneralNotification(
                         'Logbook Diajukan',
                         "Intern {$user->nama} telah mengajukan logbook tanggal " . Carbon::parse($logbooks->tanggal)->format('d-m-Y') . " untuk diverifikasi.",
-                        "/mentor/logbook",
+                        $targetPath,
                         "info",
                         "mentor"
                     ));
@@ -437,7 +488,7 @@ class LogbookController extends Controller
         return response()->json([
             'success' => true,
             'message' => $message,
-            'data' => $logbooks
+            'data' => $logbooks->load('tag')
         ]);
     }
 
@@ -510,7 +561,7 @@ class LogbookController extends Controller
             ->toArray();
         $internIds = array_unique(array_filter(array_merge($direct, $viaStudents)));
 
-        $query = Logbook::with(['user'])
+        $query = Logbook::with(['user', 'tag'])
             ->whereIn('user_id', $internIds)
             ->orderBy('tanggal', 'desc');
 
@@ -621,7 +672,7 @@ class LogbookController extends Controller
         }
 
         $mahasiswaId = $target->mahasiswa?->id_mahasiswa ?? null;
-        $query = Logbook::with(['user']);
+        $query = Logbook::with(['user', 'tag']);
         if ($mahasiswaId) {
             $query->where('id_mahasiswa', $mahasiswaId);
         } else {
@@ -840,7 +891,10 @@ class LogbookController extends Controller
             ->keyBy('user_id');
 
         // Get libur dates (to exclude)
-        $liburDates = \App\Models\Libur::pluck('tanggal')->toArray();
+        $liburDates = \App\Models\Libur::pluck('tanggal')->map(function($d) {
+            return ($d instanceof \Carbon\Carbon) ? $d->toDateString() : (string)$d;
+        })->toArray();
+        $liburSet = array_flip($liburDates);
 
         $result = [];
         foreach ($internIds as $uid) {
@@ -861,10 +915,30 @@ class LogbookController extends Controller
 
             $expected = 0;
             if ($periodStart->lte($periodEnd)) {
-                for ($d = $periodStart->copy(); $d->lte($periodEnd); $d->addDay()) {
-                    $ds = $d->toDateString();
-                    if ($d->isWeekend() || in_array($ds, $liburDates)) continue;
-                    $expected++;
+                // Calculate total days
+                $days = $periodStart->diffInDays($periodEnd) + 1;
+                $fullWeeks = floor($days / 7);
+                $expected = $fullWeeks * 5;
+                
+                $remainingDays = $days % 7;
+                if ($remainingDays > 0) {
+                    $startDay = $periodStart->dayOfWeek; // 0 (Sun) - 6 (Sat)
+                    for ($i = 0; $i < $remainingDays; $i++) {
+                        $currentDay = ($startDay + $i) % 7;
+                        if ($currentDay != 0 && $currentDay != 6) {
+                            $expected++;
+                        }
+                    }
+                }
+                
+                // Subtract holidays
+                foreach ($liburSet as $hDate => $_) {
+                    try {
+                        $h = \Carbon\Carbon::parse($hDate);
+                        if ($h->betweenIncluded($periodStart, $periodEnd) && !$h->isWeekend()) {
+                            $expected--;
+                        }
+                    } catch (\Throwable $e) {}
                 }
             }
 
@@ -1006,11 +1080,14 @@ class LogbookController extends Controller
         $isValidFile = false;
         $targetPath = '';
 
+        // Decode URL-encoded filename to handle spaces and special chars
+        $decodedFilename = urldecode($filename);
+
         if (is_array($files)) {
             foreach ($files as $path) {
                 // path in db: "storage/logbooks/filename.pdf"
                 // we check if the requested filename matches the basename
-                if (basename($path) === $filename) {
+                if (basename($path) === $decodedFilename) {
                     $isValidFile = true;
                     $targetPath = $path; // "storage/logbooks/..."
                     break;

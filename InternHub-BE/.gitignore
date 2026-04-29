@@ -39,3 +39,4 @@ package-lock.json
 /public/storage
 /public/hot
 .env
+.seeders_run

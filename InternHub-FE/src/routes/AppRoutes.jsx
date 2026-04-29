@@ -1,3 +1,5 @@
+import React, { Suspense } from 'react';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion'; // Pastikan ini diimport
 // --- IMPORT LAYOUT ---
@@ -9,55 +11,56 @@ import ProtectedRoute from '../Layout/ProtectedRoute';
 import GuestRoute from '../Layout/GuestRoute';
 
 // --- IMPORT PAGES ---
-import Login from '../pages/Auth/Login';
-import ForgotPassword from '../pages/Auth/ForgotPassword';
-import OtpVerification from '../pages/Auth/OtpVerification';
-import ResetPassword from '../pages/Auth/ResetPassword';
-import ForceChangePassword from '../pages/Auth/ForceChangePassword';
-import Dashboard from '../pages/Magang/Dashboard';
-import Attendance from '../pages/Magang/Attendance';
-import Permission from '../pages/Magang/Permission';
-import Correction from '../pages/Magang/Correction';
-import Profile from '../pages/Magang/Profile';
-import History from '../pages/Magang/History';
-import Logbook from '../pages/Magang/Logbook';
-import ResultEvaluation from '../pages/Magang/ResultEvaluation';
-import DashboardMentor from '../pages/Mentor/Dashboard';
-import FileViewer from '../pages/Magang/FileViewer';
-import InternMonitoring from '../pages/Mentor/InternMonitoring';
-import PermissionApproval from '../pages/Mentor/Permission';
-import CorrectionApproval from '../pages/Mentor/Corrections';
-import ProfileMentor from '../pages/Mentor/Profile';
-import ReportsMentor from '../pages/Mentor/Reports';
-import AdminDashboard from '../pages/Admin/Dashboard';
-import AdminPermission from '../pages/Admin/Permission';
-import AdminCorrection from '../pages/Admin/Corrections';
-import Logs from '../pages/Mentor/Logs';
-import DetailIntern from '../pages/Mentor/DetailIntern';
-import DetailInternAdmin from '../pages/Admin/DetailInternAdmin';
-import EndingSoonInterns from '../pages/Admin/EndingSoonInterns';
-import EndingSoonInternsMentor from '../pages/Mentor/EndingSoonInterns';
-import InternMonitoringAdmin from '../pages/Admin/InternMonitoring';
-import AdminLogs from '../pages/Admin/Logs';
-import UserRole from '../pages/Admin/Masterdata/UserRole';
-import UserPermission from '../pages/Admin/Masterdata/UserPermission';
-import InternProfile from '../pages/Admin/Masterdata/InternProfile';
-import InternMapping from '../pages/Admin/Masterdata/InternMapping';
-import OfficeLocation from '../pages/Admin/Masterdata/Officelocation';
-import WorkingSchedule from '../pages/Admin/Masterdata/WorkingSchedule';
-import Evaluation from '../pages/Admin/Masterdata/Evaluation';
-import AdminReports from '../pages/Admin/Reports';
-import AdminLogbook from '../pages/Admin/Logbook';
-import AdminEvaluation from '../pages/Admin/Evaluation';
-import GenerateSertif from '../pages/Admin/GenerateSertif';
-import ProfileAdmin from '../pages/Admin/Profile';
-import LogbookMentor from '../pages/Mentor/Logbook';
-import EvaluationMentor from '../pages/Mentor/EvaluationIntern';
+const Login = React.lazy(() => import('../pages/Auth/Login'));
+const ForgotPassword = React.lazy(() => import('../pages/Auth/ForgotPassword'));
+const OtpVerification = React.lazy(() => import('../pages/Auth/OtpVerification'));
+const ResetPassword = React.lazy(() => import('../pages/Auth/ResetPassword'));
+const ForceChangePassword = React.lazy(() => import('../pages/Auth/ForceChangePassword'));
+const Dashboard = React.lazy(() => import('../pages/Magang/Dashboard'));
+const Attendance = React.lazy(() => import('../pages/Magang/Attendance'));
+const Permission = React.lazy(() => import('../pages/Magang/Permission'));
+const Correction = React.lazy(() => import('../pages/Magang/Correction'));
+const Profile = React.lazy(() => import('../pages/Magang/Profile'));
+const History = React.lazy(() => import('../pages/Magang/History'));
+const Logbook = React.lazy(() => import('../pages/Magang/Logbook'));
+const ResultEvaluation = React.lazy(() => import('../pages/Magang/ResultEvaluation'));
+const DashboardMentor = React.lazy(() => import('../pages/Mentor/Dashboard'));
+const FileViewer = React.lazy(() => import('../pages/Magang/FileViewer'));
+const InternMonitoring = React.lazy(() => import('../pages/Mentor/InternMonitoring'));
+const PermissionApproval = React.lazy(() => import('../pages/Mentor/Permission'));
+const CorrectionApproval = React.lazy(() => import('../pages/Mentor/Corrections'));
+const ProfileMentor = React.lazy(() => import('../pages/Mentor/Profile'));
+const ReportsMentor = React.lazy(() => import('../pages/Mentor/Reports'));
+const AdminDashboard = React.lazy(() => import('../pages/Admin/Dashboard'));
+const AdminPermission = React.lazy(() => import('../pages/Admin/Permission'));
+const AdminCorrection = React.lazy(() => import('../pages/Admin/Corrections'));
+const Logs = React.lazy(() => import('../pages/Mentor/Logs'));
+const DetailIntern = React.lazy(() => import('../pages/Mentor/DetailIntern'));
+const DetailInternAdmin = React.lazy(() => import('../pages/Admin/DetailInternAdmin'));
+const EndingSoonInterns = React.lazy(() => import('../pages/Admin/EndingSoonInterns'));
+const EndingSoonInternsMentor = React.lazy(() => import('../pages/Mentor/EndingSoonInterns'));
+const InternMonitoringAdmin = React.lazy(() => import('../pages/Admin/InternMonitoring'));
+const AdminLogs = React.lazy(() => import('../pages/Admin/Logs'));
+const UserRole = React.lazy(() => import('../pages/Admin/Masterdata/UserRole'));
+const UserPermission = React.lazy(() => import('../pages/Admin/Masterdata/UserPermission'));
+const InternProfile = React.lazy(() => import('../pages/Admin/Masterdata/InternProfile'));
+const InternMapping = React.lazy(() => import('../pages/Admin/Masterdata/InternMapping'));
+const OfficeLocation = React.lazy(() => import('../pages/Admin/Masterdata/Officelocation'));
+const WorkingSchedule = React.lazy(() => import('../pages/Admin/Masterdata/WorkingSchedule'));
+const Evaluation = React.lazy(() => import('../pages/Admin/Masterdata/Evaluation'));
+const Tags = React.lazy(() => import('../pages/Admin/Masterdata/Tags'));
+const AdminReports = React.lazy(() => import('../pages/Admin/Reports'));
+const AdminLogbook = React.lazy(() => import('../pages/Admin/Logbook'));
+const AdminEvaluation = React.lazy(() => import('../pages/Admin/Evaluation'));
+const GenerateSertif = React.lazy(() => import('../pages/Admin/GenerateSertif'));
+const ProfileAdmin = React.lazy(() => import('../pages/Admin/Profile'));
+const LogbookMentor = React.lazy(() => import('../pages/Mentor/Logbook'));
+const EvaluationMentor = React.lazy(() => import('../pages/Mentor/EvaluationIntern'));
 
 const AppRoutes = () => {
-  return (<AnimatePresence mode="wait">
-
-    <Routes>
+  return (
+    <Suspense fallback={<SkeletonLoader />}>
+      <Routes>
 
 
       {/* --- BAGIAN 1: AUTHENTICATION --- */}
@@ -142,6 +145,7 @@ const AppRoutes = () => {
       <Route path="/admin/masterdata/officelocation" element={<OfficeLocation />} />
       <Route path="/admin/masterdata/workingSchedule" element={<WorkingSchedule />} />
       <Route path="/admin/masterdata/evaluation" element={<Evaluation />} />
+      <Route path="/admin/masterdata/tags" element={<Tags />} />
       <Route path="/admin/reports" element={<AdminReports />} />
       <Route path="/admin/logbook" element={<AdminLogbook />} />
       <Route path="/admin/evaluation" element={<AdminEvaluation />} />
@@ -160,9 +164,8 @@ const AppRoutes = () => {
       <Route path="/izin/view/:id/:index" element={<FileViewer />} />
       <Route path="/koreksi/view/:id/:index" element={<FileViewer />} />
       <Route path="*" element={<div className="p-10 text-center font-bold text-2xl">404 - Halaman Tidak Ditemukan</div>} />
-    </Routes >
-      </AnimatePresence>
-
+    </Routes>
+      </Suspense>
   );
 };
 
