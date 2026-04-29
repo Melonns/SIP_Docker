@@ -15,7 +15,7 @@ const defaultScores = [
     { label: 'Pengembangan diri', score: 0 },
 ];
 
-const MAX_TEMPLATE_DIMENSION = 3508;
+const MAX_TEMPLATE_DIMENSION = 2000;
 const TARGET_TEMPLATE_MAX_BYTES = 4 * 1024 * 1024;
 
 const GenerateSertif = () => {
@@ -154,11 +154,11 @@ const GenerateSertif = () => {
 
     // SCALE LOGIC
     useEffect(() => {
-        if (!templateSize.width || !previewContainerRef.current) return;
+        if (!previewContainerRef.current) return;
         const updateScale = () => {
             if (previewContainerRef.current) {
                 const { width } = previewContainerRef.current.getBoundingClientRect();
-                const next = width / templateSize.width;
+                const next = width / 2000; // Fixed 2000px width reference
                 setPreviewScale(Number.isFinite(next) && next > 0 ? next : 1);
             }
         };
@@ -1032,7 +1032,7 @@ const GenerateSertif = () => {
                             
                             {/* OVERLAY KONTEN DEPAN */}
                             {previewOpen && (
-                                <div className="absolute inset-0 z-10 pointer-events-none origin-top-left" style={{ transform: `scale(${previewScale})`, width: `${templateSize.width || 2000}px`, height: `${templateSize.height || 1414}px` }}>
+                                <div className="absolute inset-0 z-10 pointer-events-none origin-top-left" style={{ transform: `scale(${previewScale})`, width: '2000px', height: `${2000 / (templateSize.width / templateSize.height) || 1414}px` }}>
                                     <div className="absolute inset-0 p-[4%] flex flex-col items-center text-center">
                                         <div className="mt-[7%]">
                                             <p className="font-serif font-bold text-slate-900 tracking-widest leading-none text-9lg md:text-[250px]" style={{ fontSize: '100px' }}>SERTIFIKAT</p>
@@ -1072,7 +1072,7 @@ const GenerateSertif = () => {
                             
                             {/* OVERLAY KONTEN BELAKANG */}
                             {previewOpen && (
-                                <div className="absolute inset-0 z-10 origin-top-left bg-transparent" style={{ transform: `scale(${previewScale})`, width: `${templateSize.width || 2000}px`, height: `${templateSize.height || 1414}px` }}>
+                                <div className="absolute inset-0 z-10 origin-top-left bg-transparent" style={{ transform: `scale(${previewScale})`, width: '2000px', height: `${2000 / (templateSize.width / templateSize.height) || 1414}px` }}>
                                     <div className="absolute inset-0 p-[6%]">
                                         <div className="mx-auto w-full max-w-[82%] mt-20">
                                             <div className="grid grid-cols-[250px_1fr_250px_1fr] gap-x-8 gap-y-4 text-slate-800 mb-16 w-full" style={{ fontSize: '24px' }}>
