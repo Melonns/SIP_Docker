@@ -255,6 +255,153 @@ class TestingInternSeeder extends Seeder
         }
         
         
+        // Add original dummy interns back
+        $siteId = \App\Models\TblSite::first()?->id_site ?? 1;
+        $internsDummy = [
+            [
+                'nama' => 'Budi Santoso',
+                'email' => 'budi.santoso@student.univ.ac.id',
+                'nim' => '1204130609990000',
+                'universitas' => 'Universitas Brawijaya',
+                'jurusan' => 'Teknik Informatika',
+                'no_telp' => '081234567890',
+                'id_site' => $siteId,
+                'alamat' => 'Jl. Ketintang No. 12, Surabaya',
+                'jenjang_pendidikan' => 'S1',
+                'mulai_magang' => '2026-01-01',
+                'akhir_magang' => '2026-06-30',
+                'job_position' => 'Fullstack Developer',
+                'division' => 'IT Development',
+                'work_schedule_id' => 1,
+            ],
+            [
+                'nama' => 'Dewi Lestari',
+                'email' => 'dewi.lestari@student.univ.ac.id',
+                'nim' => '1204130609990001',
+                'universitas' => 'Universitas Airlangga',
+                'jurusan' => 'Sistem Informasi',
+                'no_telp' => '081223344556',
+                'id_site' => $siteId,
+                'alamat' => 'Jl. Gubeng Kertajaya No. 45, Surabaya',
+                'jenjang_pendidikan' => 'S1',
+                'mulai_magang' => '2026-01-15',
+                'akhir_magang' => '2026-07-15',
+                'job_position' => 'UI/UX Designer',
+                'division' => 'Design',
+                'work_schedule_id' => 1,
+            ],
+            [
+                'nama' => 'Rian Hidayat',
+                'email' => 'rian.hidayat@samudra.ac.id',
+                'nim' => '1204130609990002',
+                'universitas' => 'Universitas Samudra Internasional',
+                'jurusan' => 'Teknik Kapal Laut',
+                'no_telp' => '081334455667',
+                'id_site' => $siteId, 
+                'alamat' => 'Jl. Rembang Industri Raya No. 5, Pasuruan',
+                'jenjang_pendidikan' => 'D4',
+                'mulai_magang' => '2026-02-01',
+                'akhir_magang' => '2026-08-01',
+                'job_position' => 'Quality Assurance',
+                'division' => 'Quality Assurance',
+                'work_schedule_id' => 1,
+            ],
+            [
+                'nama' => 'Ahmad Fauzi',
+                'email' => 'ahmad.fauzi@student.univ.ac.id',
+                'nim' => '1204130609990003',
+                'universitas' => 'Universitas Brawijaya',
+                'jurusan' => 'Teknik Informatika',
+                'no_telp' => '081445566778',
+                'id_site' => $siteId,
+                'alamat' => 'Jl. Veteran No. 10, Malang',
+                'jenjang_pendidikan' => 'S1',
+                'mulai_magang' => '2026-01-01',
+                'akhir_magang' => '2026-06-30',
+                'job_position' => 'Backend Developer',
+                'division' => 'IT Development',
+                'work_schedule_id' => 1,
+            ],
+            [
+                'nama' => 'Siti Aisyah',
+                'email' => 'siti.aisyah@student.univ.ac.id',
+                'nim' => '1204130609990004',
+                'universitas' => 'Universitas Brawijaya',
+                'jurusan' => 'Desain Komunikasi Visual',
+                'no_telp' => '081556677889',
+                'id_site' => $siteId, 
+                'alamat' => 'Jl. Dinoyo No. 5, Malang',
+                'jenjang_pendidikan' => 'S1',
+                'mulai_magang' => '2026-03-01',
+                'akhir_magang' => '2026-09-01',
+                'job_position' => 'Content Creator',
+                'division' => 'Jasa Penunjang',
+                'work_schedule_id' => 1,
+            ],
+            [
+                'nama' => 'Farhan Hakim',
+                'email' => 'farhan.hakim@student.univ.ac.id',
+                'nim' => '1204130609970006',
+                'universitas' => 'Universitas Samudra Internasional',
+                'jurusan' => 'Teknik Kapal Laut',
+                'no_telp' => '08985121650000',
+                'id_site' => $siteId,
+                'alamat' => 'Jl. Ketintang Baru No. 15, Surabaya',
+                'jenjang_pendidikan' => 'S1',
+                'mulai_magang' => '2026-01-01',
+                'akhir_magang' => '2026-04-28',
+                'job_position' => 'Marine Engineer',
+                'division' => 'Engineering',
+                'work_schedule_id' => 1,
+            ]
+        ];
+
+        foreach ($internsDummy as $dummy) {
+            // Create User record
+            $dummyUser = User::updateOrCreate(
+                ['email' => $dummy['email']],
+                [
+                    'password' => Hash::make('password123'),
+                    'level' => 'intern',
+                    'nama' => $dummy['nama'],
+                    'status' => 'active',
+                ]
+            );
+            $dummyUser->roles()->syncWithoutDetaching([\App\Models\Role::where('name', 'intern')->first()?->role_id]);
+
+            // Create Student profile
+            $dummyStudent = TblMahasiswa::updateOrCreate(
+                ['user_id' => $dummyUser->user_id],
+                [
+                    'nim' => $dummy['nim'],
+                    'nama' => $dummy['nama'],
+                    'email' => $dummy['email'],
+                    'universitas' => $dummy['universitas'],
+                    'jurusan' => $dummy['jurusan'],
+                    'no_telp' => $dummy['no_telp'],
+                    'id_site' => $dummy['id_site'],
+                    'alamat' => $dummy['alamat'],
+                    'jenjang_pendidikan' => $dummy['jenjang_pendidikan'],
+                    'mulai_magang' => $dummy['mulai_magang'],
+                    'akhir_magang' => $dummy['akhir_magang'],
+                    'job_position' => $dummy['job_position'],
+                    'division' => $dummy['division'],
+                    'work_schedule_id' => $dummy['work_schedule_id'],
+                ]
+            );
+
+            // Map to Mentor
+            InternMentor::firstOrCreate([
+                'intern_id' => $dummyStudent->id_mahasiswa,
+                'mentor_id' => $mentorProfile->id_karyawan,
+            ], [
+                'intern_user_id' => $dummyUser->user_id,
+                'mentor_user_id' => $mentorUser->user_id,
+                'assigned_date' => Carbon::now()->toDateString(),
+                'is_active' => ($dummy['nama'] === 'Farhan Hakim' ? false : true),
+            ]);
+        }
+
         // Output ke terminal
         $this->command->info('TestingInternSeeder berhasil dieksekusi.');
         $this->command->info('Akun Mentor: mentor.testing@sier.id | pass: password123');
