@@ -58,8 +58,7 @@ const LogbookMentor = React.lazy(() => import('../pages/Mentor/Logbook'));
 const EvaluationMentor = React.lazy(() => import('../pages/Mentor/EvaluationIntern'));
 
 const AppRoutes = () => {
-  return (<AnimatePresence mode="wait">
-
+  return (
     <Suspense fallback={<SkeletonLoader />}>
       <Routes>
 
@@ -167,8 +166,6 @@ const AppRoutes = () => {
       <Route path="*" element={<div className="p-10 text-center font-bold text-2xl">404 - Halaman Tidak Ditemukan</div>} />
     </Routes>
       </Suspense>
-      </AnimatePresence>
-
   );
 };
 

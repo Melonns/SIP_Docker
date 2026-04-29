@@ -27,9 +27,13 @@ export default defineConfig(({ mode }) => {
       host: true,
       watch: {
         usePolling: true,
+        interval: 1000,
+      },
+      hmr: {
+        clientPort: 3000,
       },
       // Mengizinkan domain Ngrok di server, atau localhost di laptop
-      allowedHosts: [ 'localhost:5173', 'dev-sip.sier.id'], 
+      allowedHosts: [ 'localhost:5173', 'localhost:3000', 'dev-sip.sier.id'], 
       proxy: {
         '/api': {
           // DIAMBIL DARI .env Masing-masing

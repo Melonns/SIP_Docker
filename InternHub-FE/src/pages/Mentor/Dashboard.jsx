@@ -140,7 +140,6 @@ const StatCard = ({ icon, title, value }) => (
 // --- MAIN DASHBOARD ---
 const DashboardMentor = () => {
   // Data State
-  const [intern, setIntern] = useState([]);
   const [dashboard, setDashboard] = useState(null);
 
   // Filter State
@@ -171,18 +170,7 @@ const DashboardMentor = () => {
     } catch (e) {/* ignore malformed dates */ }
   }, [startDate]);
 
-  // Fetch Interns
-  useEffect(() => {
-    const fetchInterns = async () => {
-      try {
-        const response = await apiClient.get("/mentor/interns");
-        setIntern(response.data.data || []);
-      } catch (err) {
-        setIntern([]);
-      }
-    };
-    fetchInterns();
-  }, []);
+  const isFirstRender = useRef(true);
 
   // Fetch Dashboard Stats
   useEffect(() => {
@@ -198,7 +186,17 @@ const DashboardMentor = () => {
         setDashboard(null);
       }
     };
-    fetchDashboard();
+
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      fetchDashboard();
+      return;
+    }
+
+    const t = setTimeout(() => {
+      fetchDashboard();
+    }, 400);
+    return () => clearTimeout(t);
   }, [startDate, endDate]);
 
   // Helper: Map Monthly Chart Data
@@ -267,9 +265,8 @@ const DashboardMentor = () => {
   const pieStartAngle = nonZeroSlices <= 1 ? 90 : 0;
   const pieEndAngle = nonZeroSlices <= 1 ? -270 : 360;
 
-  // Ending soon (prefer dashboard.intern_bimbingan.ending_soon when available)
+  // Ending soon (from dashboard.intern_bimbingan.ending_soon)
   const endingInterns = React.useMemo(() => {
-    // Prefer dashboard-provided ending soon list
     const ending = dashboard?.intern_bimbingan?.ending_soon?.data;
     if (ending && Array.isArray(ending) && ending.length > 0) {
       return ending
@@ -279,7 +276,6 @@ const DashboardMentor = () => {
           if (!rawEnd) return null;
           const d = new Date(rawEnd);
           if (isNaN(d)) return null;
-          // use raw end date difference (do not add an extra day)
           const daysLeft = item.days_left ?? Math.ceil((d - new Date()) / (1000 * 60 * 60 * 24));
           return { ...item, name, endDate: d.toISOString().split('T')[0], daysLeft };
         })
@@ -287,25 +283,8 @@ const DashboardMentor = () => {
         .sort((a, b) => a.daysLeft - b.daysLeft)
         .slice(0, 5);
     }
-
-    // Fallback: compute from intern list (previous behavior)
-    const today = new Date();
-    if (!intern || intern.length === 0) return [];
-    return (intern || [])
-      .map((i) => {
-        const rawDate = i.end_date || i.endDate || i.end || i.end_at || i.endDate_at || i.tanggal_berakhir;
-        if (!rawDate) return null;
-        const d = new Date(rawDate);
-        if (isNaN(d)) return null;
-        // use raw end date difference (do not add an extra day)
-        const daysLeft = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
-        return { ...i, endDate: d.toISOString().split('T')[0], daysLeft };
-      })
-      .filter(Boolean)
-      .filter((x) => x.daysLeft >= 0 && x.daysLeft <= 30)
-      .sort((a, b) => a.daysLeft - b.daysLeft)
-      .slice(0, 5);
-  }, [intern, dashboard]);
+    return [];
+  }, [dashboard]);
 
   // Animation Variants
   const containerVariants = {

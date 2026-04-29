@@ -150,7 +150,13 @@ class ReportController extends Controller
                             ->where('tanggal_selesai', '>=', $endDate);
                       });
             })
-            ->get();
+            ->get()
+            ->map(function($l) {
+                $l->parsed_mulai = \Carbon\Carbon::parse($l->tanggal_mulai)->toDateString();
+                $l->parsed_selesai = \Carbon\Carbon::parse($l->tanggal_selesai)->toDateString();
+                return $l;
+            })
+            ->groupBy('user_id');
 
         // 3. Fetch approved corrections
         $corrections = \App\Models\KoreksiAbsensi::whereIn('user_id', $internIds)
@@ -222,14 +228,11 @@ class ReportController extends Controller
                 
                 // Find if there's an approved leave for this date
                 // Prioritize "izin" over "sakit" if multiple leaves on same date
-                $matchingLeaves = $leaves->filter(function($l) use ($intern, $dateStr) {
-                    return $l->user_id == $intern->user_id && 
-                           $dateStr >= Carbon::parse($l->tanggal_mulai)->toDateString() && 
-                           $dateStr <= Carbon::parse($l->tanggal_selesai)->toDateString();
-                });
+                $userLeaves = isset($leaves[$intern->user_id]) ? collect($leaves[$intern->user_id]) : collect();
                 
-                // Sort to prioritize "izin" (0) over "sakit" (1)
-                $matchingLeaves = $matchingLeaves->sort(function($a, $b) {
+                $matchingLeaves = $userLeaves->filter(function($l) use ($dateStr) {
+                    return $dateStr >= $l->parsed_mulai && $dateStr <= $l->parsed_selesai;
+                })->sort(function($a, $b) {
                     $aVal = ($a->jenis_izin === 'izin') ? 0 : 1;
                     $bVal = ($b->jenis_izin === 'izin') ? 0 : 1;
                     return $aVal <=> $bVal;
@@ -579,6 +582,18 @@ class ReportController extends Controller
         if (empty($internIds)) {
             $data = [];
         } else {
+            // 1. Fetch mentor mappings in one fast query to avoid dependent subquery execution in SELECT
+            $mentorMap = \DB::table('intern_mentors as im')
+                ->join('students as s', 'im.intern_id', '=', 's.id_mahasiswa')
+                ->join('employees as e', 'im.mentor_id', '=', 'e.id_karyawan')
+                ->join('users as u', 'e.user_id', '=', 'u.user_id')
+                ->whereIn('s.user_id', $internIds)
+                ->where('im.is_active', 1)
+                ->select('s.user_id', 'u.nama as mentor_name')
+                ->get()
+                ->pluck('mentor_name', 'user_id')
+                ->toArray();
+
             $placeholders = str_repeat('?,', count($internIds) - 1) . '?';
             $data = DB::select("
                 SELECT 
@@ -593,13 +608,7 @@ class ReportController extends Controller
                     l.deskripsi_kegiatan as activity,
                     l.status_verifikasi as status,
                     l.feedback,
-                    l.bukti_kegiatan,
-                    (SELECT zm.nama 
-                     FROM intern_mentors zim 
-                     JOIN employees e ON e.id_karyawan = zim.mentor_id
-                     JOIN users zm ON zm.user_id = e.user_id
-                     WHERE zim.intern_id = m.id_mahasiswa AND zim.is_active = 1 
-                     LIMIT 1) as mentor_name
+                    l.bukti_kegiatan
                 FROM logbooks l
                 JOIN users u ON l.user_id = u.user_id
                 LEFT JOIN students m ON u.user_id = m.user_id
@@ -608,6 +617,11 @@ class ReportController extends Controller
                   AND l.status_verifikasi = 'verified'
                 ORDER BY l.tanggal, l.user_id
             ", array_merge($internIds, [$startDate, $endDate]));
+
+            // 2. Attach mentor_name in PHP memory (O(N) mapping, avoids thousands of DB subquery executions)
+            foreach ($data as $row) {
+                $row->mentor_name = $mentorMap[$row->user_id] ?? '-';
+            }
         }
 
         // Cek jika preview

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 import {
   LayoutDashboard,
   Clock,
@@ -26,6 +26,13 @@ import logoSier from '../assets/Logo1.png';
 import apiClient from '../api/axiosConfig';
 import { fetchSecureBlob } from '../utils/secureFetch';
 import { hasPermission } from '../utils/permissionHelpers';
+
+// Custom component to freeze the outlet during exit animations
+const AnimatedOutlet = () => {
+  const o = useOutlet();
+  const [outlet] = useState(o);
+  return outlet;
+};
 
 const MainLayout = () => {
   // State UI
@@ -54,6 +61,8 @@ const MainLayout = () => {
 
   const location = useLocation();
   const navigate = useNavigate();
+
+
 
 
 
@@ -159,19 +168,7 @@ const MainLayout = () => {
     // Initial load + background refresh (every 5m).
     fetchMyPermissions();
 
-    // Delay registering focus/visibility listeners to avoid double-fetch on mount
-    let listenersRegistered = false;
     const intervalId = setInterval(fetchMyPermissions, 300000);
-    const handleFocus = () => fetchMyPermissions();
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') fetchMyPermissions();
-    };
-
-    const listenerId = setTimeout(() => {
-      listenersRegistered = true;
-      window.addEventListener('focus', handleFocus);
-      document.addEventListener('visibilitychange', handleVisibility);
-    }, 2000);
 
     // Re-fetch immediately when permissions are changed
     const handlePermUpdate = () => fetchMyPermissions();
@@ -179,12 +176,7 @@ const MainLayout = () => {
 
     return () => {
       clearInterval(intervalId);
-      clearTimeout(listenerId);
       window.removeEventListener('permissions-updated', handlePermUpdate);
-      if (listenersRegistered) {
-        window.removeEventListener('focus', handleFocus);
-        document.removeEventListener('visibilitychange', handleVisibility);
-      }
     };
   }, [fetchMyPermissions]);
 
@@ -521,9 +513,11 @@ const MainLayout = () => {
         </header>
 
         <main className={`flex-1 magang-font ${(!location.pathname.includes('/magang/dashboard')) ? 'magang-reduced' : ''} overflow-x-hidden overflow-y-auto p-4 md:p-6 bg-[#F8FAFC]`}>
-          <PageTransition key={location.pathname}>
-            <Outlet />
-          </PageTransition>
+          <AnimatePresence mode="wait">
+            <PageTransition key={location.pathname}>
+              <AnimatedOutlet />
+            </PageTransition>
+          </AnimatePresence>
         </main>
       </div>
 

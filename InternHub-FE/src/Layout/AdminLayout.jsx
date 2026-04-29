@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 import {
     LayoutDashboard,
     Clock,
@@ -36,6 +36,13 @@ import logoSier from '../assets/Logo1.png';
 import apiClient from '../api/axiosConfig';
 import { fetchSecureBlob } from '../utils/secureFetch';
 import { hasPermission } from '../utils/permissionHelpers';
+
+// Custom component to freeze the outlet during exit animations
+const AnimatedOutlet = () => {
+    const o = useOutlet();
+    const [outlet] = useState(o);
+    return outlet;
+};
 
 const AdminLayout = () => {
     // --- STATE UI ---
@@ -174,19 +181,7 @@ const AdminLayout = () => {
     useEffect(() => {
         fetchMyPermissions();
 
-        // Delay registering focus/visibility listeners to avoid double-fetch on mount
-        let listenersRegistered = false;
         const intervalId = setInterval(fetchMyPermissions, 180000); // 3 minutes
-        const handleFocus = () => fetchMyPermissions();
-        const handleVisibility = () => {
-            if (document.visibilityState === 'visible') fetchMyPermissions();
-        };
-
-        const listenerId = setTimeout(() => {
-            listenersRegistered = true;
-            window.addEventListener('focus', handleFocus);
-            document.addEventListener('visibilitychange', handleVisibility);
-        }, 2000);
 
         // Re-fetch immediately when permissions are changed (e.g. from UserPermission page)
         const handlePermUpdate = () => fetchMyPermissions();
@@ -194,12 +189,7 @@ const AdminLayout = () => {
 
         return () => {
             clearInterval(intervalId);
-            clearTimeout(listenerId);
             window.removeEventListener('permissions-updated', handlePermUpdate);
-            if (listenersRegistered) {
-                window.removeEventListener('focus', handleFocus);
-                document.removeEventListener('visibilitychange', handleVisibility);
-            }
         };
     }, [fetchMyPermissions]);
 
@@ -763,7 +753,7 @@ const AdminLayout = () => {
                 <main className="flex-1 overflow-x-hidden overflow-y-auto p-6 md:p-8 bg-[#F8FAFC] admin-font">
                     <AnimatePresence mode="wait">
                         <PageTransition key={location.pathname}>
-                            <Outlet />
+                            <AnimatedOutlet />
                         </PageTransition>
                     </AnimatePresence>
                 </main>
