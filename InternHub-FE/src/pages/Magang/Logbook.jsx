@@ -919,14 +919,14 @@ const DailyActivitiesPage = () => {
 
       {/* TABLE */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-visible">
-        <div className="overflow-x-auto px-2 md:px-0">
-          <div className="inline-block min-w-max pr-6">
-          <table className="w-full text-left table-auto min-w-[1200px] md:min-w-max">
+        <div className="overflow-x-auto px-2 md:px-0 w-full">
+          <div className="inline-block min-w-full md:block">
+          <table className="w-full text-left table-auto min-w-[1000px] md:min-w-0">
             <thead>
               <tr className="border-b border-slate-100 text-[13px] font-bold text-slate-900 bg-slate-50/50">
                 <th className="px-3 py-4 w-14 text-center">No</th>
                 <th className="px-3 py-4 w-[110px] whitespace-nowrap text-center">Date</th>
-                <th className="pl-3 pr-3 py-4 w-[420px] text-center">Activity Preview</th>
+                <th className="pl-3 pr-3 py-4 w-[420px]">Activity Preview</th>
                 <th className="px-3 py-4 w-24 text-center">Clock In</th>
                 <th className="px-3 py-4 w-24 text-center">Clock Out</th>
                 <th className="px-3 py-4 w-24 text-center">Work Hours</th>
