@@ -918,14 +918,15 @@ const DailyActivitiesPage = () => {
       </div>
 
       {/* TABLE */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left table-fixed">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-visible">
+        <div className="overflow-x-auto px-2 md:px-0">
+          <div className="inline-block min-w-max pr-6">
+          <table className="w-full text-left table-auto min-w-[1200px] md:min-w-max">
             <thead>
               <tr className="border-b border-slate-100 text-[13px] font-bold text-slate-900 bg-slate-50/50">
                 <th className="px-3 py-4 w-14 text-center">No</th>
                 <th className="px-3 py-4 w-[110px] whitespace-nowrap text-center">Date</th>
-                <th className="pl-3 pr-3 py-4 text-center">Activity Preview</th>
+                <th className="pl-3 pr-3 py-4 w-[420px] text-center">Activity Preview</th>
                 <th className="px-3 py-4 w-24 text-center">Clock In</th>
                 <th className="px-3 py-4 w-24 text-center">Clock Out</th>
                 <th className="px-3 py-4 w-24 text-center">Work Hours</th>
@@ -955,7 +956,7 @@ const DailyActivitiesPage = () => {
                       <div className="font-medium">{item.date}</div>
                     </td>
                     <td className="pl-3 pr-3 py-4 text-slate-700" title={item.summary}>
-                      <div className="whitespace-normal break-words text-sm leading-relaxed" style={{ textAlign: 'justify' }}>{item.summary}</div>
+                      <div className="text-sm leading-relaxed break-words max-w-[420px]" style={{ textAlign: 'justify', wordBreak: 'break-word' }}>{item.summary}</div>
                     </td>
                     <td className="px-3 py-4 text-center text-slate-700 font-medium">{item.jam_masuk || '-'}</td>
                     <td className="px-3 py-4 text-center text-slate-700 font-medium">{item.jam_pulang || '-'}</td>
@@ -1054,59 +1055,60 @@ const DailyActivitiesPage = () => {
                 )))}
             </tbody>
           </table>
-        </div>
-        {totalEntries > 0 && (
-          <div className="flex flex-col md:flex-row justify-between items-center p-5 border-t border-slate-100 text-sm text-slate-500 gap-4">
-            <p className="order-2 md:order-1">Showing {paginationMeta.from} to {paginationMeta.to} of {paginationMeta.total} entries</p>
-            <div className="flex items-center gap-4 order-1 md:order-2">
-              <div className="flex items-center gap-2">
-                <label className="text-sm md:text-sm font-medium text-slate-600">Per page:</label>
-                <div className="w-24">
-                  <CustomDropdown
-                    value={String(itemsPerPage)}
-                    onChange={(val) => setItemsPerPage(Number(val))}
-                    options={[{ id: "5", name: "5" }, { id: "10", name: "10" }, { id: "25", name: "25" }]}
-                    placeholder="Per page"
-                    compact={true}
-                  />
+          {totalEntries > 0 && (
+            <div className="flex flex-col md:flex-row justify-between items-center p-5 border-t border-slate-100 text-sm text-slate-500 gap-4">
+              <p className="order-2 md:order-1">Showing {paginationMeta.from} to {paginationMeta.to} of {paginationMeta.total} entries</p>
+              <div className="flex items-center gap-4 order-1 md:order-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm md:text-sm font-medium text-slate-600">Per page:</label>
+                  <div className="w-24">
+                    <CustomDropdown
+                      value={String(itemsPerPage)}
+                      onChange={(val) => setItemsPerPage(Number(val))}
+                      options={[{ id: "5", name: "5" }, { id: "10", name: "10" }, { id: "25", name: "25" }]}
+                      placeholder="Per page"
+                      compact={true}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 border border-slate-200 disabled:cursor-not-allowed"><ChevronLeft size={18} /></button>
+                  {(() => {
+                    const pageCurrent = currentPage;
+                    const pageTotal = paginationMeta.last_page || 1;
+                    const getPageItems = (current, total, sibling = 1) => {
+                      const totalNumbers = sibling * 2 + 5;
+                      if (total <= totalNumbers) return Array.from({ length: total }, (_, i) => i + 1);
+                      const left = Math.max(2, current - sibling);
+                      const right = Math.min(total - 1, current + sibling);
+                      const pages = [1];
+                      if (left > 2) pages.push('left-ellipsis');
+                      for (let i = left; i <= right; i++) pages.push(i);
+                      if (right < total - 1) pages.push('right-ellipsis');
+                      pages.push(total);
+                      return pages;
+                    };
+                    return getPageItems(pageCurrent, pageTotal, 1).map((p, idx) => {
+                      if (p === 'left-ellipsis' || p === 'right-ellipsis') return <div key={`${p}-${idx}`} className="w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold text-slate-400">...</div>;
+                      return (
+                        <button
+                          key={p}
+                          onClick={() => handlePageChange(p)}
+                          aria-current={pageCurrent === p ? 'page' : undefined}
+                          className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-colors ${pageCurrent === p ? "bg-slate-100 text-[#27345A]" : "text-slate-500 hover:bg-slate-100 border border-transparent"}`}
+                        >
+                          {p}
+                        </button>
+                      );
+                    });
+                  })()}
+                  <button disabled={currentPage === (paginationMeta?.last_page ?? totalPages)} onClick={() => handlePageChange(currentPage + 1)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 border border-slate-200 disabled:cursor-not-allowed"><ChevronRight size={18} /></button>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 border border-slate-200 disabled:cursor-not-allowed"><ChevronLeft size={18} /></button>
-                {(() => {
-                  const pageCurrent = currentPage;
-                  const pageTotal = paginationMeta.last_page || 1;
-                  const getPageItems = (current, total, sibling = 1) => {
-                    const totalNumbers = sibling * 2 + 5;
-                    if (total <= totalNumbers) return Array.from({ length: total }, (_, i) => i + 1);
-                    const left = Math.max(2, current - sibling);
-                    const right = Math.min(total - 1, current + sibling);
-                    const pages = [1];
-                    if (left > 2) pages.push('left-ellipsis');
-                    for (let i = left; i <= right; i++) pages.push(i);
-                    if (right < total - 1) pages.push('right-ellipsis');
-                    pages.push(total);
-                    return pages;
-                  };
-                  return getPageItems(pageCurrent, pageTotal, 1).map((p, idx) => {
-                    if (p === 'left-ellipsis' || p === 'right-ellipsis') return <div key={`${p}-${idx}`} className="w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold text-slate-400">...</div>;
-                    return (
-                      <button
-                        key={p}
-                        onClick={() => handlePageChange(p)}
-                        aria-current={pageCurrent === p ? 'page' : undefined}
-                        className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-colors ${pageCurrent === p ? "bg-slate-100 text-[#27345A]" : "text-slate-500 hover:bg-slate-100 border border-transparent"}`}
-                      >
-                        {p}
-                      </button>
-                    );
-                  });
-                })()}
-                <button disabled={currentPage === (paginationMeta?.last_page ?? totalPages)} onClick={() => handlePageChange(currentPage + 1)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 border border-slate-200 disabled:cursor-not-allowed"><ChevronRight size={18} /></button>
-              </div>
             </div>
+          )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* --- MODALS SECTION --- */}
