@@ -8,6 +8,9 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use App\Notifications\GeneralNotification;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class LogbookController extends Controller
 {
@@ -191,6 +194,30 @@ class LogbookController extends Controller
     }
 
     /**
+     * Helper: Encrypt and store logbook evidence files
+     */
+    private function encryptLogbookFiles(array $uploadedFiles): array
+    {
+        $buktiPaths = [];
+        try {
+            foreach ($uploadedFiles as $file) {
+                $originalName = preg_replace('/[^A-Za-z0-9.\-_]/', '_', $file->getClientOriginalName());
+                $uniqueFolder = time() . '_' . uniqid();
+                $filename = $uniqueFolder . '/' . $originalName;
+                $fileContents = file_get_contents($file->getRealPath());
+                $encryptedContents = Crypt::encryptString($fileContents);
+                Storage::disk("local")->put("encrypted/logbooks/" . $filename, $encryptedContents);
+                $buktiPaths[] = "encrypted/logbooks/" . $filename;
+                Log::info("Bukti kegiatan logbook di-encrypt", ['filename' => $filename]);
+            }
+        } catch (\Exception $e) {
+            Log::error("Error encrypt logbook files: " . $e->getMessage());
+            throw $e;
+        }
+        return $buktiPaths;
+    }
+
+    /**
      * Create logbooks entry (Intern)
      * Rich text / textarea untuk deskripsi kegiatan harian
      */
@@ -240,15 +267,20 @@ class LogbookController extends Controller
                     $oldFiles = $existing->bukti_kegiatan;
                     if ($oldFiles && is_array($oldFiles)) {
                         foreach ($oldFiles as $oldFile) {
-                            $path = str_replace('storage/', '', $oldFile);
-                            \Illuminate\Support\Facades\Storage::disk('public')->delete($path);
+                            if (str_starts_with($oldFile, 'encrypted/')) {
+                                if (Storage::disk('local')->exists($oldFile)) {
+                                    Storage::disk('local')->delete($oldFile);
+                                }
+                            } else {
+                                $path = str_replace('storage/', '', $oldFile);
+                                if (Storage::disk('public')->exists($path)) {
+                                    Storage::disk('public')->delete($path);
+                                }
+                            }
                         }
                     }
-                    foreach ($uploadedFiles as $file) {
-                        $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
-                        $path = $file->storeAs('logbooks', $filename, 'public');
-                        $buktiPaths[] = 'storage/' . $path;
-                    }
+                    // Encrypt and store new files
+                    $buktiPaths = $this->encryptLogbookFiles($uploadedFiles);
                 }
 
                 $updateData = [
@@ -302,12 +334,7 @@ class LogbookController extends Controller
         // Handle File Upload
         $buktiPaths = [];
         if (!empty($uploadedFiles)) {
-            foreach ($uploadedFiles as $file) {
-                 $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
-                 // Store in storage/app/public/logbooks
-                 $path = $file->storeAs('logbooks', $filename, 'public');
-                 $buktiPaths[] = 'storage/' . $path;
-            }
+            $buktiPaths = $this->encryptLogbookFiles($uploadedFiles);
         }
 
         $logbooks = Logbook::create([
@@ -456,10 +483,36 @@ class LogbookController extends Controller
             }
             // Upload new files
             $newPaths = [];
-            foreach ($uploadedFiles as $file) {
-                 $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
-                 $path = $file->storeAs('logbooks', $filename, 'public');
-                 $newPaths[] = 'storage/' . $path;
+            if (!empty($uploadedFiles)) {
+                // Delete old files first
+                if ($oldFiles && is_array($oldFiles)) {
+                    foreach ($oldFiles as $oldFile) {
+                        if (str_starts_with($oldFile, 'encrypted/')) {
+                            if (Storage::disk('local')->exists($oldFile)) {
+                                Storage::disk('local')->delete($oldFile);
+                            }
+                        } else {
+                            $path = str_replace('storage/', '', $oldFile);
+                            if (Storage::disk('public')->exists($path)) {
+                                Storage::disk('public')->delete($path);
+                            }
+                        }
+                    }
+                } elseif ($oldFiles) {
+                    // Fallback for legacy single string
+                    if (str_starts_with($oldFiles, 'encrypted/')) {
+                        if (Storage::disk('local')->exists($oldFiles)) {
+                            Storage::disk('local')->delete($oldFiles);
+                        }
+                    } else {
+                        $path = str_replace('storage/', '', $oldFiles);
+                        if (Storage::disk('public')->exists($path)) {
+                            Storage::disk('public')->delete($path);
+                        }
+                    }
+                }
+                // Encrypt and store new files
+                $newPaths = $this->encryptLogbookFiles($uploadedFiles);
             }
             $dataToUpdate['bukti_kegiatan'] = $newPaths; // Mutator will json_encode
         }
@@ -1099,21 +1152,52 @@ class LogbookController extends Controller
             return response()->json(['message' => 'File tidak ditemukan di logbooks ini'], 404);
         }
 
-        // Serve File
-        // Remove 'storage/' prefix because Storage::disk('public') starts inside storage/app/public
-        $relativePath = str_replace('storage/', '', $targetPath);
-
-        if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($relativePath)) {
-            return response()->json(['message' => 'File fisik tidak ditemukan'], 404);
+        // Serve File - Handle both encrypted and non-encrypted
+        // Check if file is encrypted
+        if (str_starts_with($targetPath, 'encrypted/')) {
+            // Encrypted file in local disk
+            if (!Storage::disk('local')->exists($targetPath)) {
+                return response()->json(['message' => 'File fisik tidak ditemukan'], 404);
+            }
+            try {
+                $encryptedContents = Storage::disk('local')->get($targetPath);
+                $decryptedContents = Crypt::decryptString($encryptedContents);
+                $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                $mimeType = $finfo->buffer($decryptedContents) ?: "application/octet-stream";
+                
+                if ($request->query('download')) {
+                    $downloadName = $decodedFilename;
+                    if (str_ends_with($downloadName, '.enc')) {
+                        $downloadName = str_replace('.enc', '', $downloadName);
+                        if (strpos($downloadName, '---') !== false) {
+                            $parts = explode('---', $downloadName);
+                            $downloadName = end($parts);
+                        } else {
+                            $downloadName = preg_replace('/^\d+_[a-z0-9]+_/', '', $downloadName);
+                        }
+                    }
+                    return response($decryptedContents, 200)
+                        ->header('Content-Type', $mimeType)
+                        ->header('Content-Disposition', "attachment; filename=\"" . $downloadName . "\"");
+                }
+                return response($decryptedContents, 200)->header('Content-Type', $mimeType);
+            } catch (\Exception $e) {
+                Log::error("Error decrypt logbook file: " . $e->getMessage());
+                return response()->json(['message' => 'Error decrypt file: ' . $e->getMessage()], 500);
+            }
+        } else {
+            // Non-encrypted file (legacy) in public disk
+            $relativePath = str_replace('storage/', '', $targetPath);
+            if (!Storage::disk('public')->exists($relativePath)) {
+                return response()->json(['message' => 'File fisik tidak ditemukan'], 404);
+            }
+            if ($request->query('download')) {
+                return Storage::disk('public')->download($relativePath);
+            }
+            $file = Storage::disk('public')->get($relativePath);
+            $mimeType = Storage::disk('public')->mimeType($relativePath);
+            return response($file)->header('Content-Type', $mimeType);
         }
-
-        if ($request->query('download')) {
-            return \Illuminate\Support\Facades\Storage::disk('public')->download($relativePath);
-        }
-
-        $file = \Illuminate\Support\Facades\Storage::disk('public')->get($relativePath);
-        $mimeType = \Illuminate\Support\Facades\Storage::disk('public')->mimeType($relativePath);
-        return response($file)->header('Content-Type', $mimeType);
     }
 
     /**

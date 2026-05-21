@@ -64,6 +64,7 @@ Route::post('/verify-reset-token', [ForgotPasswordController::class, 'verifyToke
 // ==========================================================================
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get("/secure-image", [App\Http\Controllers\Api\SecureFileController::class, "show"]);
 
     // --- Protected Data (Moved from public for security) ---
     Route::get('/mahasiswa', [MahasiswaController::class, 'index']);

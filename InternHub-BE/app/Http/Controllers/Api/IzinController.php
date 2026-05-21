@@ -59,6 +59,27 @@ class IzinController extends Controller
         $filePath = $lampiranPaths[$index];
         $disk = Storage::disk('public');
 
+        if (str_starts_with($filePath, "encrypted/")) {
+            if (!Storage::disk("local")->exists($filePath)) return response()->json(["message" => "File fisik tidak ditemukan"], 404);
+            $encryptedContents = Storage::disk("local")->get($filePath);
+            $decryptedContents = \Illuminate\Support\Facades\Crypt::decryptString($encryptedContents);
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = $finfo->buffer($decryptedContents) ?: "application/octet-stream";
+            
+            $downloadName = basename($filePath);
+            if (str_ends_with($downloadName, '.enc')) {
+                $downloadName = str_replace('.enc', '', $downloadName);
+                if (strpos($downloadName, '---') !== false) {
+                    $parts = explode('---', $downloadName);
+                    $downloadName = end($parts);
+                } else {
+                    $downloadName = preg_replace('/^leave_requests_\d+_\d+_[a-z0-9]+_/', '', $downloadName);
+                }
+            }
+            
+            return response($decryptedContents, 200)->header("Content-Type", $mime)->header("Content-Disposition", "attachment; filename=\"" . $downloadName . "\"");
+        }
+
         if (!$disk->exists($filePath)) {
             return response()->json(['success' => false, 'message' => 'File fisik tidak ditemukan.'], 404);
         }
@@ -111,6 +132,27 @@ class IzinController extends Controller
 
         $filePath = $lampiranPaths[$index];
         $disk = Storage::disk('public');
+
+        if (str_starts_with($filePath, "encrypted/")) {
+            if (!Storage::disk("local")->exists($filePath)) return response()->json(["message" => "File fisik tidak ditemukan"], 404);
+            $encryptedContents = Storage::disk("local")->get($filePath);
+            $decryptedContents = \Illuminate\Support\Facades\Crypt::decryptString($encryptedContents);
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = $finfo->buffer($decryptedContents) ?: "application/octet-stream";
+            
+            $downloadName = basename($filePath);
+            if (str_ends_with($downloadName, '.enc')) {
+                $downloadName = str_replace('.enc', '', $downloadName);
+                if (strpos($downloadName, '---') !== false) {
+                    $parts = explode('---', $downloadName);
+                    $downloadName = end($parts);
+                } else {
+                    $downloadName = preg_replace('/^koreksi_lampiran_\d+_\d+_[a-z0-9]+_/', '', $downloadName);
+                }
+            }
+            
+            return response($decryptedContents, 200)->header("Content-Type", $mime)->header("Content-Disposition", "attachment; filename=\"" . $downloadName . "\"");
+        }
 
         if (!$disk->exists($filePath)) {
             return response()->json(['success' => false, 'message' => 'File fisik tidak ditemukan.'], 404);
@@ -244,18 +286,26 @@ class IzinController extends Controller
 
         $user = $request->user();
 
-        // Upload semua lampiran jika ada, optimized
+        // Upload semua lampiran jika ada, optimized dan terenkripsi
         $lampiranPaths = [];
         if ($request->hasFile('lampiran')) {
             $lampiranFiles = is_array($request->file('lampiran'))
                 ? $request->file('lampiran')
                 : [$request->file('lampiran')];
-            // Use array_map for less explicit loop, and microtime for more unique filename
             $now = microtime(true);
-            $lampiranPaths = array_map(function($file) use ($user, $now) {
-                $fileName = 'leave_requests_' . $user->user_id . '_' . str_replace('.', '', $now) . '_' . uniqid() . '_' . $file->getClientOriginalName();
-                return $file->storeAs('leave_requests/lampiran', $fileName, 'public');
-            }, $lampiranFiles);
+            try {
+                foreach ($lampiranFiles as $file) {
+                    $originalName = preg_replace('/[^A-Za-z0-9.\-_]/', '_', $file->getClientOriginalName());
+                    $uniqueFolder = $user->user_id . '_' . str_replace('.', '', $now) . '_' . uniqid();
+                    $fileName = $uniqueFolder . '/' . $originalName;
+                    $fileContents = file_get_contents($file->getRealPath());
+                    $encryptedContents = \Illuminate\Support\Facades\Crypt::encryptString($fileContents);
+                    Storage::disk("local")->put("encrypted/leave_requests/" . $fileName, $encryptedContents);
+                    $lampiranPaths[] = "encrypted/leave_requests/" . $fileName;
+                }
+            } catch (\Exception $e) {
+                return response()->json(['success' => false, 'message' => 'Error encrypting lampiran: ' . $e->getMessage()], 500);
+            }
         }
 
         // Prevent overlapping leave requests for the same user (ignore previously rejected requests)
@@ -358,6 +408,16 @@ class IzinController extends Controller
             $lampiranPaths = is_array($lampiranPaths) ? $lampiranPaths : [$lampiranPaths];
             foreach ($lampiranPaths as $path) {
                 $fileName = basename($path);
+                if (str_ends_with($fileName, '.enc')) {
+                    $displayName = str_replace('.enc', '', $fileName);
+                    if (strpos($displayName, '---') !== false) {
+                        $parts = explode('---', $displayName);
+                        $displayName = end($parts);
+                    } else {
+                        $displayName = preg_replace('/^leave_requests_\d+_\d+_[a-z0-9]+_/', '', $displayName);
+                    }
+                    $fileName = $displayName;
+                }
                 $url = url('storage/' . $path);
                 $mime = \Storage::disk('public')->exists($path) ? \Storage::disk('public')->mimeType($path) : null;
                 $lampiranInfo[] = [
@@ -1017,8 +1077,13 @@ class IzinController extends Controller
             $lampiranPaths = [];
             if ($request->hasFile('lampiran')) {
                 foreach ($request->file('lampiran') as $file) {
-                    $fileName = 'koreksi_' . $user->user_id . '_' . time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
-                    $lampiranPaths[] = $file->storeAs('koreksi/lampiran', $fileName, 'public');
+                    $originalName = preg_replace('/[^A-Za-z0-9.\-_]/', '_', $file->getClientOriginalName());
+                    $uniqueFolder = $user->user_id . '_' . time() . '_' . uniqid();
+                    $fileName = $uniqueFolder . '/' . $originalName;
+                    $fileContents = file_get_contents($file->getRealPath());
+                    $encryptedContents = \Illuminate\Support\Facades\Crypt::encryptString($fileContents);
+                    Storage::disk("local")->put("encrypted/koreksi/" . $fileName, $encryptedContents);
+                    $lampiranPaths[] = "encrypted/koreksi/" . $fileName;
                 }
             }
 
@@ -1108,8 +1173,13 @@ class IzinController extends Controller
             $lampiranPaths = [];
             if ($request->hasFile('lampiran')) {
                 foreach ($request->file('lampiran') as $file) {
-                    $fileName = 'koreksi_' . $user->user_id . '_' . time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
-                    $lampiranPaths[] = $file->storeAs('koreksi/lampiran', $fileName, 'public');
+                    $originalName = preg_replace('/[^A-Za-z0-9.\-_]/', '_', $file->getClientOriginalName());
+                    $uniqueFolder = $user->user_id . '_' . time() . '_' . uniqid();
+                    $fileName = $uniqueFolder . '/' . $originalName;
+                    $fileContents = file_get_contents($file->getRealPath());
+                    $encryptedContents = \Illuminate\Support\Facades\Crypt::encryptString($fileContents);
+                    Storage::disk("local")->put("encrypted/koreksi/" . $fileName, $encryptedContents);
+                    $lampiranPaths[] = "encrypted/koreksi/" . $fileName;
                 }
             }
 
@@ -1564,6 +1634,15 @@ class IzinController extends Controller
             abort(404, 'Lampiran tidak ditemukan');
         }
         $filePath = $lampiranPaths[$index];
+        if (str_starts_with($filePath, "encrypted/")) {
+            if (!Storage::disk("local")->exists($filePath)) abort(404, 'File tidak ditemukan');
+            $encryptedContents = Storage::disk("local")->get($filePath);
+            $decryptedContents = \Illuminate\Support\Facades\Crypt::decryptString($encryptedContents);
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = $finfo->buffer($decryptedContents) ?: "application/octet-stream";
+            return response($decryptedContents, 200)->header("Content-Type", $mime);
+        }
+
         $disk = Storage::disk('public');
         if (!$disk->exists($filePath)) {
             abort(404, 'File tidak ditemukan');
@@ -1583,6 +1662,15 @@ class IzinController extends Controller
             abort(404, 'Lampiran tidak ditemukan');
         }
         $filePath = $lampiranPaths[$index];
+        if (str_starts_with($filePath, "encrypted/")) {
+            if (!Storage::disk("local")->exists($filePath)) abort(404, 'File tidak ditemukan');
+            $encryptedContents = Storage::disk("local")->get($filePath);
+            $decryptedContents = \Illuminate\Support\Facades\Crypt::decryptString($encryptedContents);
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = $finfo->buffer($decryptedContents) ?: "application/octet-stream";
+            return response($decryptedContents, 200)->header("Content-Type", $mime);
+        }
+
         $disk = Storage::disk('public');
         if (!$disk->exists($filePath)) {
             abort(404, 'File tidak ditemukan');

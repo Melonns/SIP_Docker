@@ -12,6 +12,8 @@ use App\Models\KoreksiAbsensi;
 use App\Services\LocationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod; // Jangan lupa import ini di atas
 
@@ -149,12 +151,21 @@ class AbsensiController extends Controller
             ], 400);
         }
 
-        // Upload foto wajah
+        // Upload foto wajah dengan encryption
         $fotoPath = null;
         if ($request->hasFile('foto')) {
-            $foto = $request->file('foto');
-            $fotoName = 'absen_masuk_' . $user->user_id . '_' . $today . '_' . time() . '.' . $foto->getClientOriginalExtension();
-            $fotoPath = $foto->storeAs('absensi/foto', $fotoName, 'public');
+            try {
+                $foto = $request->file('foto');
+                $fotoName = 'absen_masuk_' . $user->user_id . '_' . $today . '_' . time() . '.enc';
+                $fileContents = file_get_contents($foto->getRealPath());
+                $encryptedContents = Crypt::encryptString($fileContents);
+                Storage::disk("local")->put("encrypted/absensi/" . $fotoName, $encryptedContents);
+                $fotoPath = "encrypted/absensi/" . $fotoName;
+                Log::info("Foto absen masuk di-encrypt", ['filename' => $fotoName]);
+            } catch (\Exception $e) {
+                Log::error("Error encrypt foto absen masuk: " . $e->getMessage());
+                return response()->json(['message' => 'Error upload foto: ' . $e->getMessage()], 500);
+            }
         }
 
         // Hitung lama telat berdasarkan jam_masuk dari Work Schedule / Site
@@ -357,12 +368,21 @@ class AbsensiController extends Controller
             ], 400);
         }
 
-        // Upload foto wajah
+        // Upload foto wajah dengan encryption
         $fotoPath = null;
         if ($request->hasFile('foto')) {
-            $foto = $request->file('foto');
-            $fotoName = 'absen_pulang_' . $user->user_id . '_' . $today . '_' . time() . '.' . $foto->getClientOriginalExtension();
-            $fotoPath = $foto->storeAs('absensi/foto', $fotoName, 'public');
+            try {
+                $foto = $request->file('foto');
+                $fotoName = 'absen_pulang_' . $user->user_id . '_' . $today . '_' . time() . '.enc';
+                $fileContents = file_get_contents($foto->getRealPath());
+                $encryptedContents = Crypt::encryptString($fileContents);
+                Storage::disk("local")->put("encrypted/absensi/" . $fotoName, $encryptedContents);
+                $fotoPath = "encrypted/absensi/" . $fotoName;
+                Log::info("Foto absen pulang di-encrypt", ['filename' => $fotoName]);
+            } catch (\Exception $e) {
+                Log::error("Error encrypt foto absen pulang: " . $e->getMessage());
+                return response()->json(['message' => 'Error upload foto: ' . $e->getMessage()], 500);
+            }
         }
 
         // Simpan absensi pulang dengan waktu server
@@ -1226,7 +1246,20 @@ class AbsensiController extends Controller
             }
         }
 
-        if (!$fotoPath || !Storage::disk('public')->exists($fotoPath)) {
+        if (!$fotoPath) {
+            return response()->json(['message' => 'Foto tidak ditemukan'], 404);
+        }
+
+        if (str_starts_with($fotoPath, "encrypted/")) {
+            if (!Storage::disk("local")->exists($fotoPath)) return response()->json(["message" => "Foto tidak ditemukan di storage"], 404);
+            $encryptedContents = Storage::disk("local")->get($fotoPath);
+            $decryptedContents = Crypt::decryptString($encryptedContents);
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = $finfo->buffer($decryptedContents) ?: "application/octet-stream";
+            return response($decryptedContents, 200)->header("Content-Type", $mime);
+        }
+
+        if (!Storage::disk('public')->exists($fotoPath)) {
             return response()->json(['message' => 'Foto tidak ditemukan di storage'], 404);
         }
 
@@ -1267,7 +1300,20 @@ class AbsensiController extends Controller
             }
         }
 
-        if (!$fotoPath || !Storage::disk('public')->exists($fotoPath)) {
+        if (!$fotoPath) {
+            return response()->json(['message' => 'Foto tidak ditemukan'], 404);
+        }
+
+        if (str_starts_with($fotoPath, "encrypted/")) {
+            if (!Storage::disk("local")->exists($fotoPath)) return response()->json(["message" => "Foto tidak ditemukan di storage"], 404);
+            $encryptedContents = Storage::disk("local")->get($fotoPath);
+            $decryptedContents = Crypt::decryptString($encryptedContents);
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = $finfo->buffer($decryptedContents) ?: "application/octet-stream";
+            return response($decryptedContents, 200)->header("Content-Type", $mime);
+        }
+
+        if (!Storage::disk('public')->exists($fotoPath)) {
             return response()->json(['message' => 'Foto tidak ditemukan di storage'], 404);
         }
 

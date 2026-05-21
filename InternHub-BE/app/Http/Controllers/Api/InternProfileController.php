@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Jobs\DeleteInternData;
 use Illuminate\Http\Request;
 use App\Models\User;
+use Illuminate\Support\Facades\Crypt;
 use App\Models\TblMahasiswa;
 use App\Models\WorkSchedule;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -536,7 +538,7 @@ class InternProfileController extends Controller
             'remove_bank_proof' => 'sometimes|boolean',
         ]);
 
-        $updateData = $request->except(['foto_ktm', '_method', 'remove_foto_ktm']);
+        $updateData = $request->except(['foto_ktm', '_method', 'remove_foto_ktm', 'foto', 'remove_foto']);
         // Map legacy field names if present
         if (array_key_exists('no_rekening', $updateData) && !array_key_exists('bank_account_number', $updateData)) {
             $updateData['bank_account_number'] = $updateData['no_rekening'];
@@ -547,62 +549,6 @@ class InternProfileController extends Controller
         unset($updateData['bank_proof']);
         unset($updateData['remove_bank_proof']);
 
-        // Handle Foto KTM Upload
-        if ($request->hasFile('foto_ktm')) {
-            $file = $request->file('foto_ktm');
-            if ($mahasiswa->foto_ktm && Storage::exists(str_replace('storage/', 'public/', $mahasiswa->foto_ktm))) {
-                Storage::delete(str_replace('storage/', 'public/', $mahasiswa->foto_ktm));
-            }
-            $filename = time() . '_ktm_' . uniqid() . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('mahasiswa', $filename, 'public');
-            $updateData['foto_ktm'] = 'storage/' . $path;
-        }
-
-        // Handle remove foto KTM
-        if ($request->boolean('remove_foto_ktm') && !$request->hasFile('foto_ktm')) {
-            if ($mahasiswa->foto_ktm && Storage::exists(str_replace('storage/', 'public/', $mahasiswa->foto_ktm))) {
-                Storage::delete(str_replace('storage/', 'public/', $mahasiswa->foto_ktm));
-            }
-            $updateData['foto_ktm'] = null;
-        }
-
-        // Handle regular profile photo upload
-        if ($request->hasFile('foto')) {
-            $file = $request->file('foto');
-            if ($mahasiswa->foto && Storage::exists(str_replace('storage/', 'public/', $mahasiswa->foto))) {
-                Storage::delete(str_replace('storage/', 'public/', $mahasiswa->foto));
-            }
-            $filename = time() . '_foto_' . uniqid() . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('mahasiswa', $filename, 'public');
-            $updateData['foto'] = 'storage/' . $path;
-        }
-
-        // Handle remove profile photo
-        if ($request->boolean('remove_foto') && !$request->hasFile('foto')) {
-            if ($mahasiswa->foto && Storage::exists(str_replace('storage/', 'public/', $mahasiswa->foto))) {
-                Storage::delete(str_replace('storage/', 'public/', $mahasiswa->foto));
-            }
-            $updateData['foto'] = null;
-        }
-
-        // Handle Bank Proof Upload
-        if ($request->hasFile('bank_proof')) {
-            $file = $request->file('bank_proof');
-            if ($mahasiswa->bank_proof && Storage::exists(str_replace('storage/', 'public/', $mahasiswa->bank_proof))) {
-                Storage::delete(str_replace('storage/', 'public/', $mahasiswa->bank_proof));
-            }
-            $filename = time() . '_bank_proof_' . uniqid() . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('mahasiswa', $filename, 'public');
-            $updateData['bank_proof'] = 'storage/' . $path;
-        }
-
-        // Handle remove bank proof
-        if ($request->boolean('remove_bank_proof') && !$request->hasFile('bank_proof')) {
-            if ($mahasiswa->bank_proof && Storage::exists(str_replace('storage/', 'public/', $mahasiswa->bank_proof))) {
-                Storage::delete(str_replace('storage/', 'public/', $mahasiswa->bank_proof));
-            }
-            $updateData['bank_proof'] = null;
-        }
 
         if (empty($updateData)) {
             return response()->json([
@@ -620,6 +566,93 @@ class InternProfileController extends Controller
             ], 422);
         }
         $updateData['work_schedule_id'] = $activeSchedule->id;
+
+        // Handle Foto Upload with Encryption
+        if ($request->hasFile('foto')) {
+            try {
+                // Delete old foto if exists
+                if ($mahasiswa->foto) {
+                    $oldPath = str_replace('storage/', '', $mahasiswa->foto);
+                    if (str_starts_with($mahasiswa->foto, 'encrypted/')) {
+                        if (Storage::disk('local')->exists($mahasiswa->foto)) {
+                            Storage::disk('local')->delete($mahasiswa->foto);
+                        }
+                    } else {
+                        if (Storage::disk('public')->exists($oldPath)) {
+                            Storage::disk('public')->delete($oldPath);
+                        }
+                    }
+                }
+                
+                $filename = time() . "_foto_" . uniqid() . ".enc";
+                $fileContents = file_get_contents($request->file("foto")->getRealPath());
+                $encryptedContents = Crypt::encryptString($fileContents);
+                Storage::disk("local")->put("encrypted/users/" . $filename, $encryptedContents);
+                $updateData['foto'] = "encrypted/users/" . $filename;
+                Log::info("Foto berhasil di-upload dan di-encrypt di InternProfileController", ['filename' => $filename]);
+            } catch (\Exception $e) {
+                Log::error("Error saat upload foto di InternProfileController: " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+                return response()->json(['message' => 'Error upload foto: ' . $e->getMessage()], 500);
+            }
+        }
+
+        // Handle Foto KTM Upload with Encryption
+        if ($request->hasFile('foto_ktm')) {
+            try {
+                // Delete old KTM if exists
+                if ($mahasiswa->foto_ktm) {
+                    $oldPath = str_replace('storage/', '', $mahasiswa->foto_ktm);
+                    if (str_starts_with($mahasiswa->foto_ktm, 'encrypted/')) {
+                        if (Storage::disk('local')->exists($mahasiswa->foto_ktm)) {
+                            Storage::disk('local')->delete($mahasiswa->foto_ktm);
+                        }
+                    } else {
+                        if (Storage::disk('public')->exists($oldPath)) {
+                            Storage::disk('public')->delete($oldPath);
+                        }
+                    }
+                }
+                
+                $filename = time() . "_ktm_" . uniqid() . ".enc";
+                $fileContents = file_get_contents($request->file("foto_ktm")->getRealPath());
+                $encryptedContents = Crypt::encryptString($fileContents);
+                Storage::disk("local")->put("encrypted/users/" . $filename, $encryptedContents);
+                $updateData['foto_ktm'] = "encrypted/users/" . $filename;
+                Log::info("Foto KTM berhasil di-upload dan di-encrypt di InternProfileController", ['filename' => $filename]);
+            } catch (\Exception $e) {
+                Log::error("Error saat upload foto KTM di InternProfileController: " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+                return response()->json(['message' => 'Error upload foto KTM: ' . $e->getMessage()], 500);
+            }
+        }
+
+        // Handle Bank Proof Upload with Encryption
+        if ($request->hasFile('bank_proof')) {
+            try {
+                // Delete old bank proof if exists
+                if ($mahasiswa->bank_proof) {
+                    if (str_starts_with($mahasiswa->bank_proof, 'encrypted/')) {
+                        if (Storage::disk('local')->exists($mahasiswa->bank_proof)) {
+                            Storage::disk('local')->delete($mahasiswa->bank_proof);
+                        }
+                    } else {
+                        $oldPath = str_replace('storage/', '', $mahasiswa->bank_proof);
+                        if (Storage::disk('public')->exists($oldPath)) {
+                            Storage::disk('public')->delete($oldPath);
+                        }
+                    }
+                }
+                
+                $filename = time() . '_bank_proof_' . uniqid() . '.enc';
+                $fileContents = file_get_contents($request->file('bank_proof')->getRealPath());
+                $encryptedContents = Crypt::encryptString($fileContents);
+                Storage::disk('local')->put('encrypted/users/' . $filename, $encryptedContents);
+                $updateData['bank_proof'] = 'encrypted/users/' . $filename;
+                Log::info("Bank proof berhasil di-upload dan di-encrypt di InternProfileController", ['filename' => $filename]);
+            } catch (\Exception $e) {
+                Log::error("Error saat upload bank proof di InternProfileController: " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+                return response()->json(['message' => 'Error upload bank proof: ' . $e->getMessage()], 500);
+            }
+        }
 
         $mahasiswa->fill($updateData);
         $mahasiswa->save();
@@ -713,12 +746,22 @@ class InternProfileController extends Controller
         }
 
         // Verify storage existence
-        $path = str_replace('storage/', '', $photoPath);
-        if (!Storage::disk('public')->exists($path)) {
-            return response()->json(['message' => 'File fisik tidak ditemukan'], 404);
+        $path = str_replace("storage/", "", str_replace("encrypted/", "", $photoPath));
+
+        if (str_starts_with($photoPath, "encrypted/")) {
+            if (!Storage::disk("local")->exists($photoPath)) return response()->json(["message" => "File fisik tidak ditemukan"], 404);
+            $encryptedContents = Storage::disk("local")->get($photoPath);
+            $decryptedContents = Crypt::decryptString($encryptedContents);
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = $finfo->buffer($decryptedContents) ?: "application/octet-stream";
+            return response($decryptedContents, 200)->header("Content-Type", $mime);
         }
 
-        return Storage::disk('public')->response($path);
+        if (!Storage::disk("public")->exists($path)) {
+            return response()->json(["message" => "File fisik tidak ditemukan"], 404);
+        }
+
+        return Storage::disk("public")->response($path);
     }
 
     /**
@@ -742,12 +785,21 @@ class InternProfileController extends Controller
         }
 
         // Verify storage existence
-        $path = str_replace('storage/', '', $mahasiswa->bank_proof);
-        if (!Storage::disk('public')->exists($path)) {
-            return response()->json(['message' => 'File fisik tidak ditemukan'], 404);
+        $path = str_replace("storage/", "", str_replace("encrypted/", "", $mahasiswa->bank_proof));
+
+        if (str_starts_with($mahasiswa->bank_proof, "encrypted/")) {
+            if (!Storage::disk("local")->exists($mahasiswa->bank_proof)) return response()->json(["message" => "File fisik tidak ditemukan"], 404);
+            $encryptedContents = Storage::disk("local")->get($mahasiswa->bank_proof);
+            $decryptedContents = Crypt::decryptString($encryptedContents);
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = $finfo->buffer($decryptedContents) ?: "application/octet-stream";
+            return response($decryptedContents, 200)->header("Content-Type", $mime);
         }
 
-        return Storage::disk('public')->response($path);
+        if (!Storage::disk("public")->exists($path)) {
+            return response()->json(["message" => "File fisik tidak ditemukan"], 404);
+        }
+        return Storage::disk("public")->response($path);
     }
 
     /**
